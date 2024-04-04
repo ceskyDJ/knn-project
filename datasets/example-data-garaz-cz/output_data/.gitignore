@@ -1,0 +1,8 @@
+# Local .gitignore for ignoring output data files
+#
+# Project: Feeds Crawling Discussions
+# Wiki: http://knot.fit.vutbr.cz/wiki/index.php/Feeds_crawling_discussions
+# Author: Michal Šmahel (xsmahe01)
+# Date: 2021
+*
+!.gitignore
