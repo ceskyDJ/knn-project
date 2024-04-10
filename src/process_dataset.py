@@ -10,11 +10,10 @@ import pickle
 from torch.utils.data import DataLoader
 from datasets import Dataset
 
-SITE_ROOT = Path(__file__).parent.parent / "datasets/example-seznam/seznamzpravy"
+SITE_ROOT = Path(__file__).parent.parent / "datasets/example-data-garaz-cz/extended_output_data/garaz"
 
 def traverse_directory(root_dir):
-    # TODO(filip): add hierarchy and html (maybe as options?)
-    data = {"image": [], "segment_boxes": [], "id": []}
+    data = {"image": [], "segment_boxes": [], "id": [], "html": [], "hierarchy": []}
 
     for subdir, dirs, files in os.walk(root_dir):
         if os.path.basename(subdir) == "screenshot":
@@ -23,26 +22,44 @@ def traverse_directory(root_dir):
                     image_path = os.path.join(subdir, file)
                     box_folder = os.path.join(subdir.replace("screenshot", "bounding-boxes"))
                     box_file = os.path.join(box_folder, file.replace(".png", ".pickle"))
-                    if os.path.exists(box_file):
+                    html_file = os.path.join(subdir.replace("screenshot", "html"), file.replace(".png", ".html"))
+                    hierarchy_file = os.path.join(subdir.replace("screenshot", "hierarchy"), file.replace(".png", ".pickle"))
+
+                    if os.path.exists(box_file) and os.path.exists(html_file) and os.path.exists(hierarchy_file):
                         data["image"].append(image_path)
-                        data["image"].append(Image.open(image_path))#.convert("RGB"))
+                        # data["image"].append(Image.open(image_path)) 
 
                         with open(box_file, "rb") as f:
                             data["segment_boxes"].append(pickle.load(f))
+
                         data["id"].append(os.path.basename(root_dir) + "-" + Path(image_path).stem + "-" + str(Path(subdir).parent.name))
+                        data["html"].append(html_file) # zatial ako cesta k suboru
+                        
+                        with open(hierarchy_file, "rb") as f:
+                            data["hierarchy"].append(pickle.load(f))
 
     return data
 
 data = traverse_directory(SITE_ROOT)
-print(data)
 
-df_raw = pd.DataFrame(data)
+# print("Image sizes:", len(data["image"]))
+# print("Segment box sizes:", len(data["segment_boxes"]))
+# print("ID sizes:", len(data["id"]))
+# print("HTML sizes:", len(data["html"]))
+# print("Hierarchy sizes:", len(data["hierarchy"]))
+# print(data)
+
+df = pd.DataFrame(data) # TODO tu nastava chyba nie su vsetky polia rovnako dlhe alebo co
 # print(df)
 
-# df.iloc[0]["image"].show()
+# df.iloc[0]["image"].show() # uz nekladame priamo obrazky cize toto je nevyuzitelne
+# print(df.iloc[0]["id"])
+# print(df.iloc[0]["image"])
 # print(df.iloc[0]["segment_boxes"])
+# print(df.iloc[0]["html"])
+# print(df.iloc[0]["hierarchy"])
 
-# ds = Dataset.from_pandas(df)
+ds = Dataset.from_pandas(df)
 # print(ds)
 
 # TODO(filip): i don't think this works properly right now
