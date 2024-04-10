@@ -60,7 +60,7 @@ df = pd.DataFrame(data) # TODO tu nastava chyba nie su vsetky polia rovnako dlhe
 # print(df.iloc[0]["hierarchy"])
 
 ds = Dataset.from_pandas(df)
-# print(ds)
+# print(ds)+
 
 # TODO(filip): i don't think this works properly right now
 def calculate_iou(box1, box2):
@@ -113,6 +113,7 @@ def make_layoutv2_dataset(annots):
   word_labels = []
 
   processor = LayoutLMv2ImageProcessor.from_pretrained("microsoft/layoutlmv2-base-uncased")
+
 
   for id,val in annots.items():
     # val["bbox"] # list
