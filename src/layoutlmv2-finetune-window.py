@@ -70,16 +70,17 @@ def load_dataset(filename: str) -> Dataset:
         return pickle.load(f)
 
 # %%
-# ds = load_dataset("../datasets/example-seznam/seznam_long_1_cls_info.pkl")
-ds = load_dataset("../datasets/example-seznam/seznam_long_1.pkl")
+ds = load_dataset("../datasets/example-seznam/seznam_long_1_cls_info.pkl")
+# ds = load_dataset("../datasets/example-seznam/seznam_long_1.pkl")
 
 # %%
-# labels = ds.features["word_labels"].feature.names
-labels = list(id2cls.values())
+labels = ds.features["word_labels"].feature.names
+# labels = list(id2cls.values())
 
 # %%
-id2cls = {v: k for k,v in enumerate(labels)}
-cls2id = {k: v for k,v in enumerate(labels)}
+id2cls = {k: v for k,v in enumerate(labels)}
+cls2id = {v: k for k,v in enumerate(labels)}
+
 
 # %%
 processor = LayoutLMv2Processor.from_pretrained("microsoft/layoutlmv2-base-uncased", revision="no_ocr")
@@ -145,6 +146,7 @@ train_dataset = nds["train"].map(preprocess_data, batched=True, features=feature
 train_dataset.set_format(type="torch")
 # train_dataset = train_dataset.to_iterable_dataset()
 
+# %%
 test_dataset = nds["test"].map(preprocess_data, batched=True, features=features, batch_size=5, remove_columns=ds.column_names)
 test_dataset.set_format(type="torch")
 
@@ -152,10 +154,13 @@ test_dataset.set_format(type="torch")
 train_dataloader = DataLoader(train_dataset, batch_size=1) # type: ignore
 
 # %%
+test_dataloader = DataLoader(test_dataset, batch_size=2)
+
+# %%
 import custom_llmv2_no_se
 
 # %%
-check_point_name = "custom_llmv2_no_se_2"
+check_point_name = "custom_llmv2_no_se_3"
 
 # %%
 import gc
@@ -164,8 +169,8 @@ trainer = None
 gc.collect()
 
 # %%
-model = custom_llmv2_no_se.LayoutLMv2ForCustomClassification.from_pretrained('microsoft/layoutlmv2-base-uncased',
-                                                                      num_labels=len(cls2id))
+model = custom_llmv2_no_se.LayoutLMv2ForCustomClassification.from_pretrained('microsoft/layoutlmv2-base-uncased', num_labels=len(cls2id))
+# model = custom_llmv2_no_se.LayoutLMv2ForCustomClassification.from_pretrained(check_point_name + "/checkpoint-1000", num_labels=len(cls2id))
 model.config.id2label = id2cls
 model.config.label2id = cls2id
 
@@ -175,6 +180,8 @@ return_entity_level_metrics = True
 
 def compute_metrics(p):
     predictions, labels = p
+    # predictions = predictions.logits.argmax(-1).squeeze().tolist()
+    predictions = predictions[0]
     predictions = np.argmax(predictions, axis=2)
 
     # Remove ignored index (special tokens)
@@ -187,6 +194,7 @@ def compute_metrics(p):
         for prediction, label in zip(predictions, labels)
     ]
 
+    print(f"{true_labels}")
     results = metric.compute(predictions=true_predictions, references=true_labels)
     if return_entity_level_metrics:
         # Unpack nested dictionaries
@@ -211,22 +219,25 @@ class CommentTrainer(Trainer):
       return train_dataloader
 
     def get_test_dataloader(self, test_dataset):
-    #   return test_dataloader
-      return train_dataloader
+      return test_dataloader
 
 # %%
 args = TrainingArguments(
     output_dir=check_point_name, # dir to store checkpoints
-    max_steps=1000,
+    max_steps=1500,
     warmup_ratio=0.1, # small warmup
     fp16=True, # mixed precision (less memory) -- requires CUDA
     push_to_hub=False, 
+    label_names=["labels"]
 )
 
+# %%
 trainer = CommentTrainer(
     model=model,
     args=args,
     compute_metrics=compute_metrics,
+    eval_dataset=train_dataset,
+
 )
 
 torch.cuda.empty_cache()
@@ -236,10 +247,11 @@ torch.cuda.empty_cache()
 trainer.train()
 
 # %%
-predictions, labels, metrics = trainer.predict(test_dataset)
+predictions, labels, metrics = trainer.predict(test_dataset=test_dataset)
+
+# %%
+# res = trainer.evaluate(eval_dataset=train_dataset)
+# res
 
 # %%
 print(metrics)
-
-# %%
-test_dataset
