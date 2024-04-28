@@ -70,7 +70,8 @@ def load_dataset(filename: str) -> Dataset:
         return pickle.load(f)
 
 # %%
-ds = load_dataset("../datasets/example-seznam/seznam_long_1_cls_info.pkl")
+ds = load_dataset("../datasets/example-seznam/seznam_se_1.pkl")
+# ds = load_dataset("../datasets/example-seznam/seznam_long_1_cls_info.pkl")
 # ds = load_dataset("../datasets/example-seznam/seznam_long_1.pkl")
 
 # %%
@@ -78,8 +79,15 @@ labels = ds.features["word_labels"].feature.names
 # labels = list(id2cls.values())
 
 # %%
+se_labels = ds.features["start_end_labels"].feature.names
+
+# %%
 id2cls = {k: v for k,v in enumerate(labels)}
 cls2id = {v: k for k,v in enumerate(labels)}
+
+# %%
+se_id2cls = {k: v for k,v in enumerate(se_labels)}
+se_cls2id = {v: k for k,v in enumerate(se_labels)}
 
 
 # %%
@@ -96,7 +104,7 @@ features = Features({
     # 'labels': Sequence(feature=Value(dtype='int64')),
 
 
-    # 'start_end_labels': Sequence(ClassLabel(names=labels)),
+    'start_end_labels': Sequence(ClassLabel(names=se_labels)),
     # 'parent_rels': Sequence(Value(dtype='int64')),
 })
 
@@ -117,17 +125,14 @@ def preprocess_data(examples):
   overflow_to_sample_mapping = encoded_inputs.pop('overflow_to_sample_mapping')
 
 
-# # TODO(filip): enable
-#   encoded_inputs_start_end = processor(image, examples["words"], boxes=examples["boxes"], word_labels=examples["start_end"], stride=128,
-#                              padding="max_length", truncation=True, max_length=512, return_overflowing_tokens=True, return_offsets_mapping=True)
+  encoded_inputs_start_end = processor(image, examples["words"], boxes=examples["boxes"], word_labels=examples["start_end_labels"], stride=128,
+                             padding="max_length", truncation=True, max_length=512, return_overflowing_tokens=True, return_offsets_mapping=True)
  
-
 
   # encoded_inputs_start_end = encoded_inputs.pop('offset_mapping')
   # overflow_to_sample_mapping = encoded_inputs.pop('overflow_to_sample_mapping')
 
-# # TODO(filip): enable
-#   encoded_inputs["start_end_labels"] = encoded_inputs_start_end["labels"]
+  encoded_inputs["start_end_labels"] = encoded_inputs_start_end["labels"]
 
   # encoded_inputs["parent_rels"] = examples["parent_rels"]
   
@@ -154,13 +159,13 @@ test_dataset.set_format(type="torch")
 train_dataloader = DataLoader(train_dataset, batch_size=1) # type: ignore
 
 # %%
-test_dataloader = DataLoader(test_dataset, batch_size=2)
+test_dataloader = DataLoader(test_dataset, batch_size=2) # type: ignore
 
 # %%
 import custom_llmv2_no_se
 
 # %%
-check_point_name = "custom_llmv2_no_se_3"
+check_point_name = "custom_llmv2_with_se_1"
 
 # %%
 import gc
@@ -184,14 +189,19 @@ def compute_metrics(p):
     predictions = predictions[0]
     predictions = np.argmax(predictions, axis=2)
 
+    word_labels = labels[0]
+    se_labels = labels[1]
+
+    print(se_labels)
+
     # Remove ignored index (special tokens)
     true_predictions = [
         [id2cls[p] for (p, l) in zip(prediction, label) if l != -100]
-        for prediction, label in zip(predictions, labels)
+        for prediction, label in zip(predictions, word_labels)
     ]
     true_labels = [
         [id2cls[l] for (p, l) in zip(prediction, label) if l != -100]
-        for prediction, label in zip(predictions, labels)
+        for prediction, label in zip(predictions, word_labels)
     ]
 
     print(f"{true_labels}")
@@ -228,7 +238,7 @@ args = TrainingArguments(
     warmup_ratio=0.1, # small warmup
     fp16=True, # mixed precision (less memory) -- requires CUDA
     push_to_hub=False, 
-    label_names=["labels"]
+    label_names=["labels", "start_end_labels"]
 )
 
 # %%
