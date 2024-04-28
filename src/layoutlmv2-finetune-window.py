@@ -185,6 +185,18 @@ model = custom_llmv2_no_se.LayoutLMv2ForCustomClassification.from_pretrained('mi
 model.config.id2label = id2cls
 model.config.label2id = cls2id
 
+
+# %%
+def print_metrics(metrics):
+    for m_type, res in metrics.items():
+        if m_type == "test_loss" or m_type == "test_runtime" or m_type == "test_samples_per_second" or m_type == "test_steps_per_second":
+            print(f"{m_type}: {res}")
+        else:
+            print(f"{m_type}:")
+
+            for k, v in res.items():
+                print(f"    {k}: {v}")
+
 # %%
 metric: Any = load_metric("seqeval")
 return_entity_level_metrics = True
@@ -262,6 +274,7 @@ class CommentTrainer(Trainer):
 args = TrainingArguments(
     output_dir=check_point_name, # dir to store checkpoints
     max_steps=501,
+    logging_steps=10,
     warmup_ratio=0.1, # small warmup
     fp16=True, # mixed precision (less memory) -- requires CUDA
     push_to_hub=False, 
@@ -291,4 +304,10 @@ predictions, labels, metrics = trainer.predict(test_dataset=test_dataset)
 # res
 
 # %%
-print(metrics)
+# print(metrics)
+print_metrics(metrics)
+
+
+# %%
+log_df = pd.DataFrame(trainer.state.log_history)
+log_df
