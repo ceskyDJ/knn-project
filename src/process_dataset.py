@@ -1,5 +1,6 @@
 # %%
 import os
+import math
 import pandas as pd
 import numpy as np
 from pathlib import Path
@@ -18,6 +19,7 @@ from transformers.models.pix2struct.image_processing_pix2struct import ImageDraw
 # %%
 # SITE_ROOT = Path(__file__).parent.parent / "datasets/example-data-garaz-cz/extended_output_data/garaz"
 SITE_ROOT = Path("..") / "datasets/example-seznam/seznamzpravy"
+# SITE_ROOT = Path("/media/filip/warehouse/fit/knn/merged-data/extended_output_data/idnes/")
 
 # %%
 cls2id = {
@@ -33,9 +35,21 @@ id2cls = {
     3 : "date_published",
 }
 
+se_id2cls = {
+    0: "O",
+    1: "B-Start",
+    2: "B-End",
+}
+
+se_cls2id = {
+    "O":       0,
+    "B-Start": 1,
+    "B-End":   2,
+}
+
 # %%
 def traverse_site_directory(root_dir):
-    data = {"image": [], "segment_boxes": [], "id": [], "html": [], "hierarchy": [], "all_boxes": []}
+    data = {"image": [], "segment_boxes": [], "id": [], "html": [], "hierarchy": [], "all_boxes": [], "wrappers": []}
 
     # print(root_dir)
     for root, dirs, _ in os.walk(root_dir, topdown=True):
@@ -56,16 +70,22 @@ def traverse_site_directory(root_dir):
                 if os.path.exists(box_file) and os.path.exists(html_file) and os.path.exists(hierarchy_file) and os.path.exists(image_file):
                     data["image"].append(image_file)
 
+                      # TODO(filip): copy image file into a folder (each DS will have its own folder)
+                      #              the image path will be relative to the root of the DS, so that
+                      #              it is portable
                     with open(box_file, "rb") as f:
                         segments = pickle.load(f)
                         modified_segments = {}
                         filtered_segments = {}
+                        wrappers = {}
                         for k,v in segments.items():
                             modified_segments[k] = [{"box": b, "class_id": c} for c,b in v.items()]
                             filtered_segments[k] = [{"box": b, "class_id": c} for c,b in v.items() if c in cls2id.keys()]
+                            wrappers[k] = [{"wrapper": b} for c,b in v.items() if c == "wrapper"][0]
 
                         data["all_boxes"].append(modified_segments)
                         data["segment_boxes"].append(filtered_segments)
+                        data["wrappers"].append(wrappers)
 
                     data["id"].append(os.path.basename(root_dir) + "-" + str(Path(root).name) + "-" + Path(image_file).stem) # [site_name]-[subdir_num]-[file_num]
                     data["html"].append(html_file)
@@ -85,11 +105,14 @@ print("All box sizes:", len(data["all_boxes"]))
 print("ID sizes:", len(data["id"]))
 print("HTML sizes:", len(data["html"]))
 print("Hierarchy sizes:", len(data["hierarchy"]))
-print("id:", data["id"][4])
+print("id:", data["id"][0])
 # print(data)
 
 # %%
-data["segment_boxes"][1]
+(data["wrappers"][0])
+
+# %%
+len(data["segment_boxes"][0].keys())
 
 # %%
 def unnormalize_box(bbox, width, height):
@@ -116,24 +139,29 @@ def draw_boxes(image: Image, boxes, norm = True):
         draw.rectangle(box["box"], outline="blue", width=2)
 
 # %%
-def draw_cls_boxes(image: Image, boxes, labels):
+def draw_cls_boxes(image: Image, boxes, labels, se_labels = None):
+    print(se_labels)
     font = ImageFont.load_default() # type: ignore
     draw = ImageDraw.Draw(image)
     label2color = { "O": "violet", "text": "green", "author_name": "blue", "date_published": "orange" }
 
     width, height = image.size
 
-    # se_label = {
-    #     0: "",
-    #     1: " start",
-    #     2: " end",
-    # }
+    se_label = {
+        0: "",
+        1: " start",
+        2: " end",
+    }
 
-    for prediction, box in zip(labels, boxes):
+    for i, (prediction, box) in enumerate(zip(labels, boxes)):
+        se = ""
+        if se_labels is not None:
+            se = se_label[se_labels[i]]
+            print(se)
         box = unnormalize_box(box, width, height)
         predicted_label = id2cls[prediction]
         draw.rectangle(box, outline=label2color[predicted_label])
-        draw.text((box[0]+10, box[1]-10), text=predicted_label, fill=label2color[predicted_label], font=font)
+        draw.text((box[0]+10, box[1]-10), text=predicted_label + se, fill=label2color[predicted_label], font=font)
 
 # %%
 # image = img.open(data["image"][0])
@@ -178,30 +206,53 @@ def calculate_iou(box1, box2):
     return iou
 
 # %%
-def classify_bboxes(image, encoding, anot):
+def classify_bboxes(image, encoding, anot, wrappers):
 
-  width, height = image.size
+    width, height = image.size
 
-  ner_tags  = []
-  for i,box in enumerate(encoding.boxes[0]):
-    # print(block)
-    ner_tags.append(0)
+    ner_tags  = []
+    start_end_tags = []
+    
+    start_idx = {}
+    end_idx = {}
+    for i,box in enumerate(encoding.boxes[0]):
+        # print(block)
+        ner_tags.append(0)
+        start_end_tags.append(0) # assume we are not at start or end
 
-    for comment_boxes in anot.values():
-        for block in comment_boxes:
-            # print(block)
-            if block["box"] is None:
+        for k, comment_boxes in anot.items():
+            wrapper_box = wrappers[k]["wrapper"]
+            if calculate_iou(wrapper_box, unnormalize_box(box, width, height)) <= 0:
                 continue
-            # TODO(filip): finish
-            iou = calculate_iou(block["box"], unnormalize_box(box, width, height)) # TODO: fix iou -- don't think it works
-            # print(iou)
 
-            if iou > 0: # there is some overlap -- mark it with that label (iou doesn't seem to work properly...)
-                ner_tags[i] = cls2id[block["class_id"]]
+            
+            for block in comment_boxes:
+                # print(block)
+                if block["box"] is None:
+                    continue
+                # TODO(filip): finish
+                iou = calculate_iou(block["box"], unnormalize_box(box, width, height)) # TODO: fix iou -- don't think it works
+                # print(iou)
 
+                if iou > 0: # there is some overlap -- mark it with that label (iou doesn't seem to work properly...)
+                    ner_tags[i] = cls2id[block["class_id"]]
 
-  # print(ner_tags)
-  return ner_tags
+                    if cls2id[block["class_id"]] != 0:
+                        if i < start_idx.get(k, math.inf):
+                            start_idx[k] = i
+                        if i > end_idx.get(k, -1):
+                            end_idx[k] = i
+
+    for k, comment_boxes in anot.items():
+        s = start_idx.get(k)
+        e = end_idx.get(k)
+        if s is None or e is None:  # TODO(filip): log this -- should not happen
+            continue
+        start_end_tags[s] = se_cls2id["B-Start"]
+        start_end_tags[e] = se_cls2id["B-End"]
+
+    # print(ner_tags)
+    return ner_tags, start_end_tags
 
 # %%
 # processor = LayoutLMv2ImageProcessor.from_pretrained("microsoft/layoutlmv2-base-uncased")
@@ -226,6 +277,7 @@ def make_layoutv2_dataset(annots):
     boxes = []
     images = []
     word_labels = []
+    start_end_labels = []
     ids = []
 
     num_annots = len(annots["image"])
@@ -239,11 +291,6 @@ def make_layoutv2_dataset(annots):
     for idx in range(num_annots):
         print(f"{idx+1}/{num_annots}")
 
-        # print(f"{id=}")
-        # print(f"{id=}")
-
-        # val["bbox"] # list
-        # val["image"] # base name
         ids.append(annots["id"][idx])
 
         image = img.open(annots["image"][idx]).convert("RGB")
@@ -251,30 +298,32 @@ def make_layoutv2_dataset(annots):
         # TODO: could this be done for all images at one time?
         encoding = processor(image, return_tensors="pt")  # you can also add all tokenizer parameters here such as padding, truncation
 
-        ner_tags = classify_bboxes(image, encoding, annots["segment_boxes"][idx])
+        ner_tags, start_end_tags = classify_bboxes(image, encoding, annots["segment_boxes"][idx], annots["wrappers"][idx])
 
         words.append(encoding.words[0])
         boxes.append(encoding.boxes[0])
         images.append(annots["image"][idx])
         word_labels.append(ner_tags)
+        start_end_labels.append(start_end_tags)
 
         # print(val["image"])
 
-    num_classes = len(cls2id.values())
-    class_labels = list(cls2id.keys())
-    class_label_feature = Sequence(feature=ClassLabel(num_classes=num_classes, names=class_labels))
+    word_label_feature = Sequence(feature=ClassLabel(num_classes=len(cls2id.values()), names=list(cls2id.keys())))
+    se_label_feature = Sequence(feature=ClassLabel(num_classes=len(se_cls2id.values()), names=list(se_cls2id.keys())))
 
     ds = Dataset.from_pandas(pd.DataFrame({ 
     "image": images,
     "words": words,
     "boxes": boxes,
     "word_labels": word_labels,
+    "start_end_labels": start_end_labels,
     "id": ids
    }), features=Features({
        "image": Value(dtype='string', id=None),
        "words": Sequence(feature=Value(dtype='string', id=None), length=-1, id=None),
        "boxes": Sequence(feature=Sequence(feature=Value(dtype='int64', id=None), length=-1, id=None), length=-1, id=None),
-       "word_labels": class_label_feature,
+       "word_labels": word_label_feature,
+       "start_end_labels": se_label_feature,
        "id": Value(dtype="string")
        }))
 
@@ -287,19 +336,19 @@ ds = make_layoutv2_dataset(data)
 ds.features
 
 # %%
-with open("../datasets/example-seznam/seznam_long_1_cls_info.pkl", "wb") as f:
+with open("../datasets/example-seznam/seznam_se_1.pkl", "wb") as f:
     pickle.dump(ds, f)
 
 # %%
 ds
 
 # %%
-item = ds[2]
+item = ds[0]
 
 # %%
 item["image"]
 
 # %%
 im = img.open(item["image"])
-draw_cls_boxes(im, item["boxes"], item["word_labels"])
+draw_cls_boxes(im, item["boxes"], item["word_labels"], item["start_end_labels"])
 im.show()
