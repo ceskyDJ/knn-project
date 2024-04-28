@@ -153,10 +153,10 @@ se_label = {0: "", 1: " start", 2: " end"}
 
 for input_image in result: 
     for comment in input_image:
+        print(comment)
         for key, value in comment.items():
             if key == "parent" or key == "id":
                 continue
-            print(key,"----", value)
             label = key
             boxes = value['boxes']
             
