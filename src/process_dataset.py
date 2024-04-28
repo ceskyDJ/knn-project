@@ -1,6 +1,7 @@
 # %%
 import os
 import math
+import shutil
 import pandas as pd
 import numpy as np
 from pathlib import Path
@@ -48,8 +49,11 @@ se_cls2id = {
 }
 
 # %%
-def traverse_site_directory(root_dir):
+def traverse_site_directory(root_dir, new_dir):
     data = {"image": [], "segment_boxes": [], "id": [], "html": [], "hierarchy": [], "all_boxes": [], "wrappers": []}
+
+    if not os.path.exists(new_dir):
+            os.makedirs(new_dir) 
 
     # print(root_dir)
     for root, dirs, _ in os.walk(root_dir, topdown=True):
@@ -68,8 +72,6 @@ def traverse_site_directory(root_dir):
                 hierarchy_file = os.path.join(hierarchy_dir, file.replace(".png", ".pickle"))
 
                 if os.path.exists(box_file) and os.path.exists(html_file) and os.path.exists(hierarchy_file) and os.path.exists(image_file):
-                    data["image"].append(image_file)
-
                       # TODO(filip): copy image file into a folder (each DS will have its own folder)
                       #              the image path will be relative to the root of the DS, so that
                       #              it is portable
@@ -87,8 +89,13 @@ def traverse_site_directory(root_dir):
                         data["segment_boxes"].append(filtered_segments)
                         data["wrappers"].append(wrappers)
 
-                    data["id"].append(os.path.basename(root_dir) + "-" + str(Path(root).name) + "-" + Path(image_file).stem) # [site_name]-[subdir_num]-[file_num]
+                    image_file_id = os.path.basename(root_dir) + "-" + str(Path(root).name) + "-" + Path(image_file).stem # [site_name]-[subdir_num]-[file_num]
+                    data["id"].append(image_file_id)
                     data["html"].append(html_file)
+                    data["image"].append(image_file_id)
+                    
+                    new_image_destination_path = os.path.join(new_dir, os.path.basename(image_file_id+".png"))
+                    shutil.copy(image_file, new_image_destination_path)
                     
                     with open(hierarchy_file, "rb") as f:
                         data["hierarchy"].append(pickle.load(f))
@@ -96,7 +103,23 @@ def traverse_site_directory(root_dir):
     return data
 
 # %%
-data = traverse_site_directory(SITE_ROOT)
+site_list = [SITE_ROOT]
+NEW_FLAT_DIRECTORY_PATH = "../datasets/flat/llmv2-flat-2023-04-29"
+
+data = {}
+
+for site in site_list:
+    newData = traverse_site_directory(SITE_ROOT, NEW_FLAT_DIRECTORY_PATH)
+    data.update({
+        "all_boxes": data.get("all_boxes", []) + newData.get("all_boxes", []),
+        "segment_boxes": data.get("segment_boxes", []) + newData.get("segment_boxes", []),
+        "wrappers": data.get("wrappers", []) + newData.get("wrappers", []),
+        "id": data.get("id", []) + newData.get("id", []),
+        "html": data.get("html", []) + newData.get("html", []),
+        "image": data.get("image", []) + newData.get("image", []),
+        "hierarchy": data.get("hierarchy", []) + newData.get("hierarchy", [])
+    })
+
 
 # %%
 print("Image sizes:", len(data["image"]))
