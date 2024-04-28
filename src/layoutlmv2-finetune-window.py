@@ -40,10 +40,16 @@ id2cls = {
     3 : "date_published",
 }
 
-se_label = {
-    0: "",
-    1: " start",
-    2: " end",
+se_id2cls = {
+    0: "O",
+    1: "B-Start",
+    2: "B-End",
+}
+
+se_cls2id = {
+    "O":       0,
+    "B-Start": 1,
+    "B-End":   2,
 }
 
 # %%
@@ -186,35 +192,56 @@ return_entity_level_metrics = True
 def compute_metrics(p):
     predictions, labels = p
     # predictions = predictions.logits.argmax(-1).squeeze().tolist()
-    predictions = predictions[0]
-    predictions = np.argmax(predictions, axis=2)
+    predictions_words = predictions[0]
+    predictions_words = np.argmax(predictions_words, axis=2)
+
+    predictions_se = predictions[1]
+    predictions_se = np.argmax(predictions_se, axis=2)
 
     word_labels = labels[0]
     se_labels = labels[1]
 
-    print(se_labels)
-
-    # Remove ignored index (special tokens)
     true_predictions = [
         [id2cls[p] for (p, l) in zip(prediction, label) if l != -100]
-        for prediction, label in zip(predictions, word_labels)
+        for prediction, label in zip(predictions_words, word_labels)
     ]
     true_labels = [
         [id2cls[l] for (p, l) in zip(prediction, label) if l != -100]
-        for prediction, label in zip(predictions, word_labels)
+        for prediction, label in zip(predictions_words, word_labels)
     ]
 
-    print(f"{true_labels}")
+    true_predictions_se = [
+        [se_id2cls[p] for (p, l) in zip(prediction, label) if l != -100]
+        for prediction, label in zip(predictions_se, se_labels)
+    ]
+    true_labels_se = [
+        [se_id2cls[l] for (p, l) in zip(prediction, label) if l != -100]
+        for prediction, label in zip(predictions_se, se_labels)
+    ]
+
+    # print(f"{true_labels}")
     results = metric.compute(predictions=true_predictions, references=true_labels)
+    results_se = metric.compute(predictions=true_predictions_se, references=true_labels_se)
     if return_entity_level_metrics:
         # Unpack nested dictionaries
         final_results = {}
+        final_word_results = {}
+        final_se_results = {}
         for key, value in results.items():
             if isinstance(value, dict):
                 for n, v in value.items():
-                    final_results[f"{key}_{n}"] = v
+                    final_word_results[f"{key}_{n}"] = v
             else:
-                final_results[key] = value
+                final_word_results[key] = value
+
+        for key, value in results_se.items():
+            if isinstance(value, dict):
+                for n, v in value.items():
+                    final_se_results[f"{key}_{n}"] = v
+            else:
+                final_se_results[key] = value
+        final_results["words"] = final_word_results
+        final_results["start_end"] = final_se_results
         return final_results
     else:
         return {
@@ -234,7 +261,7 @@ class CommentTrainer(Trainer):
 # %%
 args = TrainingArguments(
     output_dir=check_point_name, # dir to store checkpoints
-    max_steps=1500,
+    max_steps=501,
     warmup_ratio=0.1, # small warmup
     fp16=True, # mixed precision (less memory) -- requires CUDA
     push_to_hub=False, 
