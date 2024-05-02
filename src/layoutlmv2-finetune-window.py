@@ -16,6 +16,7 @@ import pandas as pd
 import numpy as np
 from datasets import Dataset
 from sklearn.model_selection import train_test_split
+import matplotlib.pyplot as plt
 
 
 
@@ -76,7 +77,10 @@ def load_dataset(filename: str) -> Dataset:
         return pickle.load(f)
 
 # %%
-ds = load_dataset("../datasets/example-seznam/seznam_se_1.pkl")
+dataset_name = "llmv2-flat-2023-04-30-[garaz]"
+dataset_path = "../datasets/flat/" + dataset_name + ".pkl"
+dataset_img_path = "../datasets/flat/" + dataset_name
+ds = load_dataset(dataset_path)
 # ds = load_dataset("../datasets/example-seznam/seznam_long_1_cls_info.pkl")
 # ds = load_dataset("../datasets/example-seznam/seznam_long_1.pkl")
 
@@ -117,7 +121,7 @@ features = Features({
 # def preprocess_data(boxes, words, ner_tags, img_path):
 def preprocess_data(examples):
   # print("ex:", (examples["words"]))
-  image = [Image.open(path).convert("RGB") for path in examples["image"]]
+  image = [Image.open(dataset_img_path + "/" + path).convert("RGB") for path in examples["image"]]
   # image = Image.open(COCO_PATH / "images" / examples["image"]).convert("RGB")
   # words = words
   # boxes = boxes
@@ -148,11 +152,6 @@ def preprocess_data(examples):
 nds = ds.train_test_split(test_size=0.2, shuffle=True)
 
 # %%
-# train_ds, test_ds = train_test_split(ds, test_size=0.2, shuffle=True)
-# assert(isinstance(train_ds, Dataset))
-# assert(isinstance(test_ds, Dataset))
-
-# %%
 train_dataset = nds["train"].map(preprocess_data, batched=True, features=features, batch_size=5, remove_columns=ds.column_names)
 train_dataset.set_format(type="torch")
 # train_dataset = train_dataset.to_iterable_dataset()
@@ -171,7 +170,7 @@ test_dataloader = DataLoader(test_dataset, batch_size=2) # type: ignore
 import custom_llmv2_no_se
 
 # %%
-check_point_name = "custom_llmv2_with_se_1"
+check_point_name = "custom_llmv2_big_garaz_1"
 
 # %%
 import gc
@@ -273,7 +272,7 @@ class CommentTrainer(Trainer):
 # %%
 args = TrainingArguments(
     output_dir=check_point_name, # dir to store checkpoints
-    max_steps=501,
+    max_steps=1000,
     logging_steps=10,
     warmup_ratio=0.1, # small warmup
     fp16=True, # mixed precision (less memory) -- requires CUDA
@@ -311,3 +310,7 @@ print_metrics(metrics)
 # %%
 log_df = pd.DataFrame(trainer.state.log_history)
 log_df
+
+# %%
+plt.plot(log_df.index, log_df["loss"], marker="o", linestyle="-")
+plt.show()
