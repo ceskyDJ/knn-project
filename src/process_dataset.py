@@ -1,5 +1,6 @@
 # %%
 import os
+import time
 import math
 import shutil
 import pandas as pd
@@ -20,6 +21,11 @@ from transformers.models.pix2struct.image_processing_pix2struct import ImageDraw
 # %%
 # SITE_ROOT = Path(__file__).parent.parent / "datasets/example-data-garaz-cz/extended_output_data/garaz"
 SITE_ROOT = Path("..") / "datasets/example-seznam/seznamzpravy"
+GARAZ_ROOT= Path("/media/filip/warehouse/fit/knn/merged-data/extended_output_data/garaz")
+SZ_ROOT= Path("/media/filip/warehouse/fit/knn/merged-data/extended_output_data/seznamzpravy")
+NOVINKY_ROOT= Path("/media/filip/warehouse/fit/knn/merged-data/extended_output_data/novinky")
+SPORT_ROOT= Path("/media/filip/warehouse/fit/knn/merged-data/extended_output_data/sport")
+ZIVE_ROOT= Path("/media/filip/warehouse/fit/knn/merged-data/extended_output_data/zive")
 # SITE_ROOT = Path("/media/filip/warehouse/fit/knn/merged-data/extended_output_data/idnes/")
 
 # %%
@@ -55,7 +61,6 @@ def traverse_site_directory(root_dir, new_dir):
     if not os.path.exists(new_dir):
             os.makedirs(new_dir) 
 
-    # print(root_dir)
     for root, dirs, _ in os.walk(root_dir, topdown=True):
         if "bounding-boxes" not in dirs:  # skip dirs, which have incomplete data, they are not usable
             continue
@@ -72,9 +77,6 @@ def traverse_site_directory(root_dir, new_dir):
                 hierarchy_file = os.path.join(hierarchy_dir, file.replace(".png", ".pickle"))
 
                 if os.path.exists(box_file) and os.path.exists(html_file) and os.path.exists(hierarchy_file) and os.path.exists(image_file):
-                      # TODO(filip): copy image file into a folder (each DS will have its own folder)
-                      #              the image path will be relative to the root of the DS, so that
-                      #              it is portable
                     with open(box_file, "rb") as f:
                         segments = pickle.load(f)
                         modified_segments = {}
@@ -92,7 +94,7 @@ def traverse_site_directory(root_dir, new_dir):
                     image_file_id = os.path.basename(root_dir) + "-" + str(Path(root).name) + "-" + Path(image_file).stem # [site_name]-[subdir_num]-[file_num]
                     data["id"].append(image_file_id)
                     data["html"].append(html_file)
-                    data["image"].append(image_file_id)
+                    data["image"].append(image_file_id + ".png")
                     
                     new_image_destination_path = os.path.join(new_dir, os.path.basename(image_file_id+".png"))
                     shutil.copy(image_file, new_image_destination_path)
@@ -103,13 +105,20 @@ def traverse_site_directory(root_dir, new_dir):
     return data
 
 # %%
-site_list = [SITE_ROOT]
-NEW_FLAT_DIRECTORY_PATH = "../datasets/flat/llmv2-flat-2023-04-29"
+# dataset_name = "llmv2-flat-2023-04-30-[garaz_novinky_sport_zive]"
+dataset_name = "llmv2-flat-2023-04-30-[seznam]"
+
+# %%
+# site_list = [SZ_ROOT, GARAZ_ROOT, NOVINKY_ROOT, SPORT_ROOT, ZIVE_ROOT]
+site_list = [SZ_ROOT]
+# site_list = [GARAZ_ROOT, ZIVE_ROOT]
+# NEW_FLAT_DIRECTORY_PATH = "../datasets/flat/llmv2-flat-2023-04-29-[speed]"
+NEW_FLAT_DIRECTORY_PATH = "../datasets/flat/" + dataset_name
 
 data = {}
 
 for site in site_list:
-    newData = traverse_site_directory(SITE_ROOT, NEW_FLAT_DIRECTORY_PATH)
+    newData = traverse_site_directory(site, NEW_FLAT_DIRECTORY_PATH)
     data.update({
         "all_boxes": data.get("all_boxes", []) + newData.get("all_boxes", []),
         "segment_boxes": data.get("segment_boxes", []) + newData.get("segment_boxes", []),
@@ -150,7 +159,7 @@ def unnormalize_box(bbox, width, height):
 def draw_boxes(image: Image, boxes, norm = True):
   draw = ImageDraw.Draw(image)
 
-  width, height = image.size
+  # width, height = image.size
 
   for comment_boxes in boxes.values():
       for box in comment_boxes:
@@ -163,7 +172,6 @@ def draw_boxes(image: Image, boxes, norm = True):
 
 # %%
 def draw_cls_boxes(image: Image, boxes, labels, se_labels = None):
-    print(se_labels)
     font = ImageFont.load_default() # type: ignore
     draw = ImageDraw.Draw(image)
     label2color = { "O": "violet", "text": "green", "author_name": "blue", "date_published": "orange" }
@@ -180,72 +188,67 @@ def draw_cls_boxes(image: Image, boxes, labels, se_labels = None):
         se = ""
         if se_labels is not None:
             se = se_label[se_labels[i]]
-            print(se)
+            # print(se)
         box = unnormalize_box(box, width, height)
         predicted_label = id2cls[prediction]
         draw.rectangle(box, outline=label2color[predicted_label])
         draw.text((box[0]+10, box[1]-10), text=predicted_label + se, fill=label2color[predicted_label], font=font)
 
 # %%
-# image = img.open(data["image"][0])
-# draw_boxes(image, data["segment_boxes"][0])
-# image.show()
-
-# %%
-# df = pd.DataFrame(data) # TODO tu nastava chyba nie su vsetky polia rovnako dlhe alebo co
-# print(df)
-
-# df.iloc[0]["image"].show() # uz nekladame priamo obrazky cize toto je nevyuzitelne
-# print(df.iloc[0]["id"])
-# print(df.iloc[0]["image"])
-# print(df.iloc[0]["segment_boxes"])
-# print(df.iloc[0]["html"])
-# print(df.iloc[0]["hierarchy"])
-
-# %%
-# ds = Dataset.from_pandas(df)
-# print(ds)
-
-# %%
 # TODO(filip): i don't think this works properly right now
-def calculate_iou(box1, box2):
-    x0_inter = max(box1[0], box2[0])
-    y0_inter = max(box1[1], box2[1])
-    x1_inter = min(box1[2], box2[2])
-    y1_inter = min(box1[3], box2[3])
+def calculate_overlap(container, box2):
+    x0_inter = max(container[0], box2[0])
+    y0_inter = max(container[1], box2[1])
+    x1_inter = min(container[2], box2[2])
+    y1_inter = min(container[3], box2[3])
     
     if x1_inter < x0_inter or y1_inter < y0_inter:
         return 0.0
     
     intersection_area = (x1_inter - x0_inter) * (y1_inter - y0_inter)
     
-    box1_area = (box1[2] - box1[0]) * (box1[3] - box1[1])
+    # box1_area = (container[2] - container[0]) * (container[3] - container[1])
     box2_area = (box2[2] - box2[0]) * (box2[3] - box2[1])
     
-    union_area = box1_area + box2_area - intersection_area
-    
-    iou = intersection_area / union_area
-    
-    return iou
+    # union_area = box1_area + box2_area - intersection_area
+
+    return (intersection_area+0.0005) / (box2_area+0.0005)
+
 
 # %%
-def classify_bboxes(image, encoding, anot, wrappers):
+def detect_incorrect_seznam():
+    # TODO(filip): works with classified bboxes and size of image.
+    #              If the proportion of "O" labels is too high in relation to
+    #              the image size and the number of "author" labels -> incorrect ground-truth
+    pass
+
+# TODO(filip): func to cut image into multiple where test is less than 500
+
+# TODO(filip): func to cut image into 3 randomly?
+
+
+# %%
+def classify_bboxes(image, boxes, anot, wrappers):
 
     width, height = image.size
 
-    ner_tags  = []
-    start_end_tags = []
+    ner_tags  = np.zeros(len(boxes))
+    start_end_tags = np.zeros(len(boxes))
+
     
     start_idx = {}
     end_idx = {}
-    for i,box in enumerate(encoding.boxes[0]):
-        # print(block)
-        ner_tags.append(0)
-        start_end_tags.append(0) # assume we are not at start or end
 
-        for k, comment_boxes in anot.items():
-            wrapper_box = wrappers[k]["wrapper"]
-            if calculate_iou(wrapper_box, unnormalize_box(box, width, height)) <= 0:
+    comments = [(k, comment_boxes, wrappers[k]["wrapper"]) for k, comment_boxes in anot.items()]
+
+    for i,box in enumerate(boxes):
+        box = unnormalize_box(box, width, height)
+        to_del = []
+        for j,(k,comment_boxes, wrapper_box) in enumerate(comments):
+            # wrapper_box = wrappers[k]["wrapper"]
+            if calculate_overlap(wrapper_box, box) <= 0:
+                if box[1] > wrapper_box[1]:
+                    to_del.append(j)
                 continue
 
             
@@ -253,11 +256,9 @@ def classify_bboxes(image, encoding, anot, wrappers):
                 # print(block)
                 if block["box"] is None:
                     continue
-                # TODO(filip): finish
-                iou = calculate_iou(block["box"], unnormalize_box(box, width, height)) # TODO: fix iou -- don't think it works
-                # print(iou)
+                overlap = calculate_overlap(block["box"], box)
 
-                if iou > 0: # there is some overlap -- mark it with that label (iou doesn't seem to work properly...)
+                if overlap > 0.7:
                     ner_tags[i] = cls2id[block["class_id"]]
 
                     if cls2id[block["class_id"]] != 0:
@@ -274,19 +275,7 @@ def classify_bboxes(image, encoding, anot, wrappers):
         start_end_tags[s] = se_cls2id["B-Start"]
         start_end_tags[e] = se_cls2id["B-End"]
 
-    # print(ner_tags)
     return ner_tags, start_end_tags
-
-# %%
-# processor = LayoutLMv2ImageProcessor.from_pretrained("microsoft/layoutlmv2-base-uncased")
-# assert(isinstance(processor, LayoutLMv2ImageProcessor))
-#
-# im = img.open(data["image"][0]).convert("RGB")
-# encoding = processor(im, return_tensors="pt")
-# ner_tags = classify_bboxes(im, encoding, data["segment_boxes"][0])
-#
-# draw_cls_boxes(im, encoding.boxes[0], ner_tags)
-# im.show()
 
 
 # %%
@@ -305,31 +294,27 @@ def make_layoutv2_dataset(annots):
 
     num_annots = len(annots["image"])
 
-    processor = LayoutLMv2ImageProcessor.from_pretrained("microsoft/layoutlmv2-base-uncased")
+    processor = LayoutLMv2ImageProcessor.from_pretrained("microsoft/layoutlmv2-base-uncased", tesseract_config="-l ces")
     assert(isinstance(processor, LayoutLMv2ImageProcessor))
 
-    # print(annots.keys())
-
-    # for id,val in annots.items():
-    for idx in range(num_annots):
+    step = 10
+    for idx in range(0, num_annots-step, step):
         print(f"{idx+1}/{num_annots}")
 
-        ids.append(annots["id"][idx])
+        ids.extend(annots["id"][idx:idx+step])
 
-        image = img.open(annots["image"][idx]).convert("RGB")
+        image = [img.open(Path(NEW_FLAT_DIRECTORY_PATH) / f).convert("RGB") for f in annots["image"][idx:idx+step]]
 
-        # TODO: could this be done for all images at one time?
-        encoding = processor(image, return_tensors="pt")  # you can also add all tokenizer parameters here such as padding, truncation
+        encoding = processor(image, return_tensors="pt")
 
-        ner_tags, start_end_tags = classify_bboxes(image, encoding, annots["segment_boxes"][idx], annots["wrappers"][idx])
+        for i in range(step):
+            ner_tags, start_end_tags = classify_bboxes(image[i], encoding.boxes[i], annots["segment_boxes"][idx+i], annots["wrappers"][idx+i])
 
-        words.append(encoding.words[0])
-        boxes.append(encoding.boxes[0])
-        images.append(annots["image"][idx])
-        word_labels.append(ner_tags)
-        start_end_labels.append(start_end_tags)
-
-        # print(val["image"])
+            words.append(encoding.words[i])
+            boxes.append(encoding.boxes[i])
+            images.append(annots["image"][idx+i])
+            word_labels.append(ner_tags)
+            start_end_labels.append(start_end_tags)
 
     word_label_feature = Sequence(feature=ClassLabel(num_classes=len(cls2id.values()), names=list(cls2id.keys())))
     se_label_feature = Sequence(feature=ClassLabel(num_classes=len(se_cls2id.values()), names=list(se_cls2id.keys())))
@@ -354,24 +339,25 @@ def make_layoutv2_dataset(annots):
 
 # %%
 ds = make_layoutv2_dataset(data)
+with open("../datasets/flat/" + dataset_name + ".pkl", "wb") as f:
+    pickle.dump(ds, f)
 
 # %%
 ds.features
 
 # %%
-with open("../datasets/example-seznam/seznam_se_1.pkl", "wb") as f:
+with open("../datasets/flat/" + dataset_name + ".pkl", "wb") as f:
     pickle.dump(ds, f)
 
 # %%
 ds
 
 # %%
-item = ds[0]
+item = ds[66]
 
 # %%
-item["image"]
-
-# %%
-im = img.open(item["image"])
+print(item["image"])
+im = img.open(Path(NEW_FLAT_DIRECTORY_PATH) / item["image"])
 draw_cls_boxes(im, item["boxes"], item["word_labels"], item["start_end_labels"])
 im.show()
+# seznamzpravy-5476-6.png # has issues
