@@ -1,12 +1,13 @@
 # %%
 from pathlib import Path
 from PIL import ImageDraw, ImageFont
-from transformers import AutoModelForTokenClassification, LayoutLMv2Processor
+from transformers import AutoModelForTokenClassification, LayoutLMv2ImageProcessor, LayoutLMv2Processor
 from custom_llmv2_no_se import LayoutLMv2ForCustomClassification
 from PIL import Image as img
 from PIL.Image import Image
 import torch
 import numpy as np
+import utils as knn_utils
 
 # %%
 cls2id = {
@@ -23,11 +24,33 @@ id2cls = {
     3 : "date_published",
 }
 
-se_label = {
-    0: "",
-    1: " start",
-    2: " end",
+se_id2cls = {
+    0: "O",
+    1: "B-Start",
+    2: "B-End",
 }
+
+se_cls2id = {
+    "O":       0,
+    "B-Start": 1,
+    "B-End":   2,
+}
+
+
+# %%
+dataset_name = "llmv2-flat-2023-04-30-[novinky]"
+dataset_path = "../datasets/flat/" + dataset_name + ".pkl"
+ds = knn_utils.load_dataset(dataset_path)
+
+# %%
+labels = ds.features["word_labels"].feature.names
+se_labels = ds.features["start_end_labels"].feature.names
+
+id2cls = {k: v for k,v in enumerate(labels)}
+cls2id = {v: k for k,v in enumerate(labels)}
+
+se_id2cls = {k: v for k,v in enumerate(se_labels)}
+se_cls2id = {v: k for k,v in enumerate(se_labels)}
 
 # %%
 def unnormalize_box(bbox, width, height):
@@ -39,16 +62,25 @@ def unnormalize_box(bbox, width, height):
      ]
 
 # %%
-model_path = "./custom_llmv2_no_se_3/checkpoint-1500"
+model_path = "./custom_llmv2_big_ds_2/checkpoint-500"
+# model_path = "./layoutlmv2-finetuned-window/checkpoint-1000"
 model = LayoutLMv2ForCustomClassification.from_pretrained(model_path)
 
 # %%
-processor = LayoutLMv2Processor.from_pretrained("microsoft/layoutlmv2-base-uncased")
+processor = LayoutLMv2Processor.from_pretrained("microsoft/layoutlmv2-base-uncased", tesseract_config="-l ces")
 assert(isinstance(processor, LayoutLMv2Processor))
 
 # %%
 # img_path = Path("../datasets/example-seznam/seznamzpravy/1/screenshot/6.png")
-img_path = Path("/media/filip/warehouse/fit/knn/merged-data/extended_output_data/idnes/30/screenshot/1.png")
+# img_path = Path("../datasets/custom_youtube/white_bg/data/yt_big_1.png")  # NOTE: this kinda works if training on yt
+# img_path = Path("../datasets/example-seznam/seznamzpravy/11/screenshot/5.png")  # NOTE: not really
+img_path = Path("../datasets/custom_sz/sz_1.png")  # NOTE: seems to work
+# img_path = Path("../datasets/example-seznam/seznamzpravy/4/screenshot/4.png")   # NOTE: works ok
+# img_path = Path("../datasets/example-seznam/garaz/5/screenshot/3.png")   # NOTE: kinda works
+# img_path = Path("../datasets/example-seznam/garaz/5/screenshot/2.png")   # NOTE: kinda works (no se)
+# img_path = Path("../datasets/example-seznam/garaz/6/screenshot/2.png")   # NOTE:
+# img_path = Path("../datasets/example-seznam/sz-4_comments.png")   # NOTE: doesnt work
+# img_path = Path("/media/filip/warehouse/fit/knn/merged-data/extended_output_data/idnes/30/screenshot/1.png") # NOTE: meh
 image = img.open(img_path).convert("RGB")
 
 width, height = image.size
@@ -67,10 +99,8 @@ print(len(encoding.bbox))
 # print(len(encoding["input_ids"][0]))
 # encoding.to("cuda") # can move to GPU -- have to move both encoding and the model below
 
-# %% [markdown]
-# # Handle split documents
-
 # %%
+# Handle split documents
 x = []
 for i in range(0, len(encoding['image'])):
      x.append(encoding['image'][i])
@@ -118,13 +148,13 @@ if outputs.logits.shape[0] != 1:
 else:
     is_subword = np.array(offset_mapping.squeeze().tolist())[:,0] != 0
 
-    true_predictions = [id2cls_dict[pred] for idx, pred in enumerate(predictions) if not is_subword[idx]]
+    true_predictions = [id2cls[pred] for idx, pred in enumerate(predictions) if not is_subword[idx]]
     true_start_end_predictions = [pred for idx, pred in enumerate(start_end_predictions) if not is_subword[idx]]
     # true_rel_predictions = [pred for idx, pred in enumerate(rel_predictions) if not is_subword[idx]]
     true_boxes = [unnormalize_box(box, width, height) for idx, box in enumerate(token_boxes) if not is_subword[idx]]
 
 # print(true_predictions)
-# print(true_start_end_predictions)
+print(true_start_end_predictions)
 # print(true_boxes)
 
 # %%
@@ -141,19 +171,30 @@ font = ImageFont.load_default()
 label2color = {'author_name':'blue', 'text':'green', 'date_published':'orange', 'O':'violet'}
 se_label = {
     0: "",
-    1: " start",
-    2: " end",
+    1: " START",
+    2: " END",
 }
 
 i = 0
 for prediction, se_prediction, box in zip(true_predictions, true_start_end_predictions, true_boxes):
     predicted_label = prediction # iob_to_label(prediction).lower()
     draw.rectangle(box, outline=label2color[predicted_label])
-    # draw.text((box[0]+10, box[1]-10), text=predicted_label + se_label[se_prediction], fill=label2color[predicted_label], font=font)
-    draw.text((box[0]+10, box[1]-10), text=predicted_label, fill=label2color[predicted_label], font=font)
+    draw.text((box[0]+10, box[1]-10), text=predicted_label + se_label[se_prediction], fill=label2color[predicted_label], font=font)
+    # draw.text((box[0]+10, box[1]-10), text=predicted_label, fill=label2color[predicted_label], font=font)
 
     # if i == 2:
     #     break
     # i+=1
 
 image.show()
+
+# %%
+image = img.open(img_path).convert("RGB")
+processor_img = LayoutLMv2ImageProcessor.from_pretrained("microsoft/layoutlmv2-base-uncased", tesseract_config="-l ces")
+encoding = processor_img(
+    image, return_tensors="pt"
+)  # you can also add all tokenizer parameters here such as padding, truncation
+print(encoding.keys())
+
+# %%
+print(encoding.words)
