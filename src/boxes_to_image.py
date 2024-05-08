@@ -7,19 +7,18 @@ import matplotlib.patches as patches
 from PIL import Image
 
 # %%
-with open("/media/filip/warehouse/fit/knn/merged-data/extended_output_data/garaz/930/bounding-boxes/2.pickle", 'rb') as f:
+num = 5
+pgn = 1
+with open(f"/media/filip/warehouse/fit/knn/v2/crawled-data-v2/extended_output_data/idnes/{num}/bounding-boxes/{pgn}.pickle", 'rb') as f:
     bounding_boxes_data = pickle.load(f)
+image = Image.open(f"/media/filip/warehouse/fit/knn/v2/crawled-data-v2/extended_output_data/idnes/{num}/screenshot/{pgn}.png")
 
-
-# %%
-image = Image.open("/media/filip/warehouse/fit/knn/merged-data/extended_output_data/garaz/936/screenshot/4.png")
-
-# %%
 fig, ax = plt.subplots(figsize=(785/100, 2015/100))
 ax.imshow(image)
 ax.axis('off')
 
 for bounding_boxes_key, bounding_boxes_value in bounding_boxes_data.items():
+    print(bounding_boxes_value.keys())
     x, y, w, h = bounding_boxes_value['wrapper']
     rect = patches.Rectangle((x, y), (w-x), (h-y), linewidth=1, edgecolor='red', facecolor='none')
     ax.add_patch(rect)
@@ -40,22 +39,23 @@ for bounding_boxes_key, bounding_boxes_value in bounding_boxes_data.items():
     ax.add_patch(rect)
     ax.text(x, y, 'text', fontsize=5, color='yellow', verticalalignment='bottom')
 
-    x, y, w, h = bounding_boxes_value['author_id']
+    # x, y, w, h = bounding_boxes_value['author_id']
+    x, y, w, h = bounding_boxes_value['author_name']
     rect = patches.Rectangle((x, y), (w-x), (h-y), linewidth=1, edgecolor='black', facecolor='none')
     ax.add_patch(rect)
-    ax.text(x, y, 'author_id', fontsize=5, color='black', verticalalignment='bottom')
+    ax.text(x, y, 'author_name', fontsize=5, color='black', verticalalignment='bottom')
 
     x, y, w, h = bounding_boxes_value['author_name']
     rect = patches.Rectangle((x, y), (w-x), (h-y), linewidth=1, edgecolor='brown', facecolor='none')
     ax.add_patch(rect)
     ax.text(x, y, 'author_name', fontsize=5, color='brown', verticalalignment='bottom')
 
-    x, y, w, h = bounding_boxes_value['author_url']
-    rect = patches.Rectangle((x, y), (w-x), (h-y), linewidth=1, edgecolor='pink', facecolor='none')
-    ax.add_patch(rect)
-    ax.text(x, y, 'author_url', fontsize=5, color='pink', verticalalignment='bottom')
+    # x, y, w, h = bounding_boxes_value['author_url']
+    # rect = patches.Rectangle((x, y), (w-x), (h-y), linewidth=1, edgecolor='pink', facecolor='none')
+    # ax.add_patch(rect)
+    # ax.text(x, y, 'author_url', fontsize=5, color='pink', verticalalignment='bottom')
 
-    if bounding_boxes_value['parent_reference'] is not None:
+    if "parent_reference" in bounding_boxes_value.keys() and bounding_boxes_value['parent_reference'] is not None:
         x, y, w, h = bounding_boxes_value['parent_reference']
         rect = patches.Rectangle((x, y), (w-x), (h-y), linewidth=1, edgecolor='orange', facecolor='none')
         ax.add_patch(rect)
