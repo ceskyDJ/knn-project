@@ -18,7 +18,7 @@ from torch.utils.data import DataLoader
 from datasets import ClassLabel, Dataset, Features, Sequence, Value
 from transformers.models.pix2struct.image_processing_pix2struct import ImageDraw
 
-from preprocess_images import cut_off_excess
+from preprocess_images import cut_off_excess, enhance_image
 
 # %%
 DS_ROOT = Path("/media/filip/warehouse/fit/knn/v2/datasets/")
@@ -30,6 +30,7 @@ DS_ROOT = Path("/media/filip/warehouse/fit/knn/v2/datasets/")
 # SPORT_ROOT= Path("/media/filip/warehouse/fit/knn/merged-data/extended_output_data/sport")
 # ZIVE_ROOT= Path("/media/filip/warehouse/fit/knn/merged-data/extended_output_data/zive")
 AHA_ROOT = Path("/media/filip/warehouse/fit/knn/v2/crawled-data-v2/extended_output_data/aha/")
+AUTO_ROOT = Path("/media/filip/warehouse/fit/knn/v2/crawled-data-v2/extended_output_data/auto/")
 # SITE_ROOT = Path("/media/filip/warehouse/fit/knn/merged-data/extended_output_data/idnes/")
 
 # %%
@@ -76,6 +77,9 @@ def traverse_site_directory(root_dir, new_dir):
             hierarchy_dir = os.path.join(root, "hierarchy")
 
             for file in os.listdir(image_dir):
+                # skip all but the first page, since there are annot errors
+                if file != "1.png":
+                    continue
                 image_file = os.path.join(image_dir, file)
                 box_file = os.path.join(box_dir, file.replace(".png", ".pickle"))
                 html_file = os.path.join(html_dir, file.replace(".png", ".html"))
@@ -92,18 +96,38 @@ def traverse_site_directory(root_dir, new_dir):
                             filtered_segments[k] = [{"box": b, "class_id": c} for c,b in v.items() if c in cls2id.keys()]
                             wrappers[k] = [{"wrapper": b} for c,b in v.items() if c == "wrapper"][0]
 
-                        data["all_boxes"].append(modified_segments)
-                        data["segment_boxes"].append(filtered_segments)
-                        data["wrappers"].append(wrappers)
+
 
                     image_file_id = os.path.basename(root_dir) + "-" + str(Path(root).name) + "-" + Path(image_file).stem # [site_name]-[subdir_num]-[file_num]
+                    new_image_destination_path = os.path.join(new_dir, os.path.basename(image_file_id+".png"))
+
+
+                    cut_img = cut_off_excess(image_file, None, wrappers, site_name)
+
+                    _, height = cut_img.size
+                    if height > 3200:
+                        continue
+
+                    cut_img.save(new_image_destination_path)
+
+
+                    im_enhance = img.open(new_image_destination_path)
+                    im_enhance = enhance_image(im_enhance, contrast_f=1.7, bright_f=1, gray=False, binary=False)
+                    im_enhance.save(new_image_destination_path)
+
+
+
+                    data["all_boxes"].append(modified_segments)
+                    data["segment_boxes"].append(filtered_segments)
+                    data["wrappers"].append(wrappers)
+
                     data["id"].append(image_file_id)
                     data["html"].append(html_file)
                     data["image"].append(image_file_id + ".png")
                     
-                    new_image_destination_path = os.path.join(new_dir, os.path.basename(image_file_id+".png"))
 
-                    cut_off_excess(image_file, new_image_destination_path, data["wrappers"][-1], site_name)
+
+
 
                     # shutil.copy(image_file, new_image_destination_path)
                     
@@ -114,11 +138,12 @@ def traverse_site_directory(root_dir, new_dir):
 
 # %%
 # dataset_name = "llmv2-flat-2023-04-30-[garaz_novinky_sport_zive]"
-dataset_name = "llmv2-v2-2023-05-08-[aha]"
+# dataset_name = "llmv2-v2-2023-05-08-[aha]"
+dataset_name = "llmv2-v2-2023-05-08-[auto]-enhanced-no-bin"
 
 # %%
 # site_list = [SZ_ROOT, GARAZ_ROOT, NOVINKY_ROOT, SPORT_ROOT, ZIVE_ROOT]
-site_list = [AHA_ROOT]
+site_list = [AUTO_ROOT]
 # site_list = [GARAZ_ROOT, ZIVE_ROOT]
 # NEW_FLAT_DIRECTORY_PATH = "../datasets/flat/llmv2-flat-2023-04-29-[speed]"
 NEW_FLAT_DIRECTORY_PATH = DS_ROOT / dataset_name
@@ -199,12 +224,20 @@ def draw_cls_boxes(image: Image, boxes, labels, se_labels = None):
             # print(se)
         box = unnormalize_box(box, width, height)
         predicted_label = id2cls[prediction]
-        draw.rectangle(box, outline=label2color[predicted_label])
+        draw.rectangle(box, outline=label2color[predicted_label])  # type: ignore
         draw.text((box[0]+10, box[1]-10), text=predicted_label + se, fill=label2color[predicted_label], font=font)
 
 # %%
-# TODO(filip): i don't think this works properly right now
 def calculate_overlap(container, box2):
+    """
+    Get the overlap between box2 and the container in terms of percentage of box2 area.
+
+    If box2 is completely within container, result is 1.0, if it is completely outside, result is 0.0.
+
+    :param container list[float]: Container bbox
+    :param box2 list[float]: Bbox of interest
+    """
+    container = offset_bbox(-8, 0, container)  # TODO(filip): 
     x0_inter = max(container[0], box2[0])
     y0_inter = max(container[1], box2[1])
     x1_inter = min(container[2], box2[2])
@@ -215,10 +248,7 @@ def calculate_overlap(container, box2):
     
     intersection_area = (x1_inter - x0_inter) * (y1_inter - y0_inter)
     
-    # box1_area = (container[2] - container[0]) * (container[3] - container[1])
     box2_area = (box2[2] - box2[0]) * (box2[3] - box2[1])
-    
-    # union_area = box1_area + box2_area - intersection_area
 
     return (intersection_area+0.0005) / (box2_area+0.0005)
 
@@ -234,9 +264,33 @@ def detect_incorrect_seznam():
 
 # TODO(filip): func to cut image into 3 randomly?
 
+# %%
+# %%
+def offset_bbox(x: float, y: float, bbox):
+    return [bbox[0] + x, bbox[1] + y, bbox[2] + x, bbox[3] + y]
 
 # %%
-def classify_bboxes(image, boxes, anot, wrappers):
+site_map = {
+    "aha": (-8, 0),
+    "lupa": (-7, -200),
+}
+
+
+# %%
+def classify_bboxes(image: Image, boxes, anot, wrappers):
+    """
+    Assign label to each bbox of a word in the given image.
+
+    It has bad performance, since at worst, it has to calculate overlap with each comment wrapper for each word.
+
+    TODO: if we could guarantee that wrappers (and the corresponding segments like author, text, ...) are y-sorted top to bottom,
+    we could speed the calculation a little.
+
+    :param image Image: Image data
+    :param boxes list: List of word bboxes
+    :param anot: Image annotation
+    :param wrappers list: List of comment wrappers
+    """
 
     width, height = image.size
 
@@ -253,7 +307,7 @@ def classify_bboxes(image, boxes, anot, wrappers):
         box = unnormalize_box(box, width, height)
         to_del = []
         for j,(k,comment_boxes, wrapper_box) in enumerate(comments):
-            # wrapper_box = wrappers[k]["wrapper"]
+            # skip comment segments, which could no possibly contain the current word
             if calculate_overlap(wrapper_box, box) <= 0:
                 if box[1] > wrapper_box[1]:
                     to_del.append(j)
@@ -261,20 +315,21 @@ def classify_bboxes(image, boxes, anot, wrappers):
 
             
             for block in comment_boxes:
-                # print(block)
                 if block["box"] is None:
                     continue
                 overlap = calculate_overlap(block["box"], box)
 
-                if overlap > 0.7:
+                if overlap > 0.65: # NOTE: modify if there incorrect labels, because of segment bbox overlap
                     ner_tags[i] = cls2id[block["class_id"]]
 
+                    # non-foolproof way of finding start and end of comments
                     if cls2id[block["class_id"]] != 0:
                         if i < start_idx.get(k, math.inf):
                             start_idx[k] = i
                         if i > end_idx.get(k, -1):
                             end_idx[k] = i
 
+    # finalize start-end label creation
     for k, comment_boxes in anot.items():
         s = start_idx.get(k)
         e = end_idx.get(k)
@@ -347,21 +402,22 @@ def make_layoutv2_dataset(annots):
 
 # %%
 ds = make_layoutv2_dataset(data)
-with open("../datasets/flat/" + dataset_name + ".pkl", "wb") as f:
-    pickle.dump(ds, f)
 
 # %%
 ds.features
 
 # %%
-with open("../datasets/flat/" + dataset_name + ".pkl", "wb") as f:
+with open( DS_ROOT / f"{dataset_name}.pkl", "wb") as f:
     pickle.dump(ds, f)
 
 # %%
 ds
 
 # %%
-item = ds[66]
+item = ds[9]
+
+# %%
+item["boxes"]
 
 # %%
 print(item["image"])
