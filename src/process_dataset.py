@@ -18,14 +18,18 @@ from torch.utils.data import DataLoader
 from datasets import ClassLabel, Dataset, Features, Sequence, Value
 from transformers.models.pix2struct.image_processing_pix2struct import ImageDraw
 
+from preprocess_images import cut_off_excess
+
 # %%
+DS_ROOT = Path("/media/filip/warehouse/fit/knn/v2/datasets/")
 # SITE_ROOT = Path(__file__).parent.parent / "datasets/example-data-garaz-cz/extended_output_data/garaz"
-SITE_ROOT = Path("..") / "datasets/example-seznam/seznamzpravy"
-GARAZ_ROOT= Path("/media/filip/warehouse/fit/knn/merged-data/extended_output_data/garaz")
-SZ_ROOT= Path("/media/filip/warehouse/fit/knn/merged-data/extended_output_data/seznamzpravy")
-NOVINKY_ROOT= Path("/media/filip/warehouse/fit/knn/merged-data/extended_output_data/novinky")
-SPORT_ROOT= Path("/media/filip/warehouse/fit/knn/merged-data/extended_output_data/sport")
-ZIVE_ROOT= Path("/media/filip/warehouse/fit/knn/merged-data/extended_output_data/zive")
+# SITE_ROOT = Path("..") / "datasets/example-seznam/seznamzpravy"
+# GARAZ_ROOT= Path("/media/filip/warehouse/fit/knn/merged-data/extended_output_data/garaz")
+# SZ_ROOT= Path("/media/filip/warehouse/fit/knn/merged-data/extended_output_data/seznamzpravy")
+# NOVINKY_ROOT= Path("/media/filip/warehouse/fit/knn/merged-data/extended_output_data/novinky")
+# SPORT_ROOT= Path("/media/filip/warehouse/fit/knn/merged-data/extended_output_data/sport")
+# ZIVE_ROOT= Path("/media/filip/warehouse/fit/knn/merged-data/extended_output_data/zive")
+AHA_ROOT = Path("/media/filip/warehouse/fit/knn/v2/crawled-data-v2/extended_output_data/aha/")
 # SITE_ROOT = Path("/media/filip/warehouse/fit/knn/merged-data/extended_output_data/idnes/")
 
 # %%
@@ -56,6 +60,7 @@ se_cls2id = {
 
 # %%
 def traverse_site_directory(root_dir, new_dir):
+    site_name = root_dir.parts[-1]
     data = {"image": [], "segment_boxes": [], "id": [], "html": [], "hierarchy": [], "all_boxes": [], "wrappers": []}
 
     if not os.path.exists(new_dir):
@@ -97,7 +102,10 @@ def traverse_site_directory(root_dir, new_dir):
                     data["image"].append(image_file_id + ".png")
                     
                     new_image_destination_path = os.path.join(new_dir, os.path.basename(image_file_id+".png"))
-                    shutil.copy(image_file, new_image_destination_path)
+
+                    cut_off_excess(image_file, new_image_destination_path, data["wrappers"][-1], site_name)
+
+                    # shutil.copy(image_file, new_image_destination_path)
                     
                     with open(hierarchy_file, "rb") as f:
                         data["hierarchy"].append(pickle.load(f))
@@ -106,14 +114,14 @@ def traverse_site_directory(root_dir, new_dir):
 
 # %%
 # dataset_name = "llmv2-flat-2023-04-30-[garaz_novinky_sport_zive]"
-dataset_name = "llmv2-flat-2023-04-30-[seznam]"
+dataset_name = "llmv2-v2-2023-05-08-[aha]"
 
 # %%
 # site_list = [SZ_ROOT, GARAZ_ROOT, NOVINKY_ROOT, SPORT_ROOT, ZIVE_ROOT]
-site_list = [SZ_ROOT]
+site_list = [AHA_ROOT]
 # site_list = [GARAZ_ROOT, ZIVE_ROOT]
 # NEW_FLAT_DIRECTORY_PATH = "../datasets/flat/llmv2-flat-2023-04-29-[speed]"
-NEW_FLAT_DIRECTORY_PATH = "../datasets/flat/" + dataset_name
+NEW_FLAT_DIRECTORY_PATH = DS_ROOT / dataset_name
 
 data = {}
 
