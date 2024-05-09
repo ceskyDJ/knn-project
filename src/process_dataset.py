@@ -1,4 +1,5 @@
 # %%
+from collections import defaultdict
 import os
 import time
 import math
@@ -19,10 +20,10 @@ from torch.utils.data import DataLoader
 from datasets import ClassLabel, Dataset, Features, Sequence, Value
 from transformers.models.pix2struct.image_processing_pix2struct import ImageDraw
 
-from preprocess_images import cut_off_excess, enhance_image
+from preprocess_images import cut_off_excess, enhance_image, split_at_max_size
 
 # %%
-DS_ROOT = Path("/media/filip/warehouse/fit/knn/v2/datasets/")
+DS_ROOT = Path("/media/filip/warehouse/fit/knn/datasets/")
 # SITE_ROOT = Path(__file__).parent.parent / "datasets/example-data-garaz-cz/extended_output_data/garaz"
 # SITE_ROOT = Path("..") / "datasets/example-seznam/seznamzpravy"
 GARAZ_ROOT= Path("/media/filip/warehouse/fit/knn/merged-data/extended_output_data/garaz")
@@ -40,12 +41,14 @@ cls2id = {
   "text": 1,
   "author_name": 2,
   "date_published": 3,
+  "parent_reference": 4,
 }
 id2cls = {
     0 : "O",
     1 : "text",
     2 : "author_name",
     3 : "date_published",
+    4 : "parent_reference",
 }
 
 se_id2cls = {
@@ -61,6 +64,13 @@ se_cls2id = {
 }
 
 # %%
+MAX_HEIGHTS = defaultdict(lambda: math.inf, {
+    "garaz": 1500,
+    "seznamzpravy": 1500,
+    "sport": 1500
+})
+
+# %%
 def filter_author_in_date(segments: dict[str, list[dict[str, Any]]]) -> bool: 
     for _, boxes in segments.items():
         author_bounding_box = [b for b in boxes if b["class_id"] == "author_name"][0]["box"]
@@ -73,7 +83,7 @@ def filter_author_in_date(segments: dict[str, list[dict[str, Any]]]) -> bool:
 # %%
 def traverse_site_directory(root_dir, new_dir, dataset_name: str):
     site_name = root_dir.parts[-1]
-    data = {"image": [], "segment_boxes": [], "id": [], "html": [], "hierarchy": [], "all_boxes": [], "wrappers": []}
+    data = {"image": [], "segment_boxes": [], "id": [], "html": [], "all_boxes": [], "wrappers": []}
 
     if not os.path.exists(new_dir):
             os.makedirs(new_dir) 
@@ -89,8 +99,8 @@ def traverse_site_directory(root_dir, new_dir, dataset_name: str):
 
             for file in os.listdir(image_dir):
                 # skip all but the first page, since there are annot errors
-                if file != "1.png":
-                    continue
+                # if file != "1.png":
+                #     continue
                 image_file = os.path.join(image_dir, file)
                 box_file = os.path.join(box_dir, file.replace(".png", ".pickle"))
                 html_file = os.path.join(html_dir, file.replace(".png", ".html"))
@@ -109,40 +119,58 @@ def traverse_site_directory(root_dir, new_dir, dataset_name: str):
 
 
 
-                    image_file_id = os.path.basename(root_dir) + "-" + str(Path(root).name) + "-" + Path(image_file).stem + "-" + dataset_name # [site_name]-[subdir_num]-[file_num]-[ds_name]
-                    new_image_destination_path = os.path.join(new_dir, os.path.basename(image_file_id+".png"))
 
 
+                    
                     cut_img = cut_off_excess(image_file, None, wrappers, site_name)
 
                     _, height = cut_img.size
-                    if height > 3200:
-                        continue
 
-                    cut_img.save(new_image_destination_path)
+                    if height > MAX_HEIGHTS[site_name]:
+                        img_list = split_at_max_size(cut_img, wrappers, [modified_segments, filtered_segments], int(MAX_HEIGHTS[site_name]))
+                        counter = 0
+                    else:
+                        img_list = [(cut_img, wrappers, None, [modified_segments, filtered_segments])]
+                        counter = None
+
+                    for idx, im in enumerate(img_list):
+                        part_image = im[0]
+                        wrappers = im[1]
+                        modified_segments = im[3][0]
+                        filtered_segments = im[3][1]
 
 
-                    # im_enhance = img.open(new_image_destination_path)
-                    # im_enhance = enhance_image(im_enhance, contrast_f=1.3, bright_f=1, gray=True, binary=False)  # TODO(filip): remove if not needed when date black
-                    # im_enhance.save(new_image_destination_path)
+                        if counter is not None:
+                            image_file_id = os.path.basename(root_dir) + "-" + str(Path(root).name) + "-" + Path(image_file).stem + "-" + str(counter) + "-" + dataset_name # [site_name]-[subdir_num]-[file_num]-[split_num]-[ds_name]
+                            new_image_destination_path = os.path.join(new_dir, os.path.basename(image_file_id+".png"))
+                            counter += 1
+                        else:
+                            image_file_id = os.path.basename(root_dir) + "-" + str(Path(root).name) + "-" + Path(image_file).stem + "-" + dataset_name # [site_name]-[subdir_num]-[file_num]-[ds_name]
+                            new_image_destination_path = os.path.join(new_dir, os.path.basename(image_file_id+".png"))
 
-                    # TODO(filip): only run for sites that require it
-                    # skip incorrect annotations
-                    if filter_author_in_date(filtered_segments):
-                        print(f"Error: found author_in_date {image_file_id}")
-                        continue
+                        part_image.save(new_image_destination_path)
 
-                    data["all_boxes"].append(modified_segments)
-                    data["segment_boxes"].append(filtered_segments)
-                    data["wrappers"].append(wrappers)
+                        # im_enhance = img.open(new_image_destination_path)
+                        # im_enhance = enhance_image(im_enhance, contrast_f=1.3, bright_f=1, gray=True, binary=False)  # TODO(filip): remove if not needed when date black
+                        # im_enhance.save(new_image_destination_path)
 
-                    data["id"].append(image_file_id)
-                    data["html"].append(html_file)
-                    data["image"].append(f"{dataset_name}/{image_file_id}.png")
+                        # TODO(filip): only run for sites that require it
+                        # skip incorrect annotations
+                        if filter_author_in_date(filtered_segments):
+                            print(f"Error: found author_in_date {image_file_id}")
+                            continue
+
+                        data["all_boxes"].append(modified_segments)
+                        data["segment_boxes"].append(filtered_segments)
+                        data["wrappers"].append(wrappers)
+
+                        data["id"].append(image_file_id)
+                        data["html"].append(html_file)
+                        data["image"].append(f"{dataset_name}/{image_file_id}.png")
                     
                     
-                    with open(hierarchy_file, "rb") as f:
-                        data["hierarchy"].append(pickle.load(f))
+                    # with open(hierarchy_file, "rb") as f:
+                    #     data["hierarchy"].append(pickle.load(f))
 
     return data
 
@@ -152,7 +180,7 @@ def traverse_site_directory(root_dir, new_dir, dataset_name: str):
 # dataset_name = "llmv2-v2-2023-05-08-[auto]-enhanced-gray"
 
 # dataset_name = "llmv2-v2-2023-05-09-[garaz]-no-2"
-dataset_name = "llmv2-v2-2023-05-09-[sport]-tmp-remove"
+dataset_name = "final-2023-05-09-[gara]-split"
 
 
 # %%
@@ -183,7 +211,7 @@ print("Segment box sizes:", len(data["segment_boxes"]))
 print("All box sizes:", len(data["all_boxes"]))
 print("ID sizes:", len(data["id"]))
 print("HTML sizes:", len(data["html"]))
-print("Hierarchy sizes:", len(data["hierarchy"]))
+# print("Hierarchy sizes:", len(data["hierarchy"]))
 print("id:", data["id"][0])
 # print(data)
 
@@ -221,7 +249,7 @@ def draw_boxes(image: Image, boxes, norm = True):
 def draw_cls_boxes(image: Image, boxes, labels, se_labels = None):
     font = ImageFont.load_default() # type: ignore
     draw = ImageDraw.Draw(image)
-    label2color = { "O": "violet", "text": "green", "author_name": "blue", "date_published": "orange" }
+    label2color = { "O": "violet", "text": "green", "author_name": "blue", "date_published": "orange", "parent_reference": "red" }
 
     width, height = image.size
 
@@ -251,7 +279,6 @@ def calculate_overlap(container, box2):
     :param container list[float]: Container bbox
     :param box2 list[float]: Bbox of interest
     """
-    # container = offset_bbox(-7, 0, container)  # TODO(filip): 
     x0_inter = max(container[0], box2[0])
     y0_inter = max(container[1], box2[1])
     x1_inter = min(container[2], box2[2])
@@ -265,29 +292,6 @@ def calculate_overlap(container, box2):
     box2_area = (box2[2] - box2[0]) * (box2[3] - box2[1])
 
     return (intersection_area+0.0005) / (box2_area+0.0005)
-
-
-# %%
-def detect_incorrect_annot():
-    # TODO(filip): works with classified bboxes and size of image.
-    #              If the proportion of "O" labels is too high in relation to
-    #              the image size and the number of "author" labels -> incorrect ground-truth
-    pass
-
-# TODO(filip): func to cut image into multiple where test is less than 500
-
-# TODO(filip): func to cut image into 3 randomly?
-
-# %%
-# %%
-def offset_bbox(x: float, y: float, bbox):
-    return [bbox[0] + x, bbox[1] + y, bbox[2] + x, bbox[3] + y]
-
-# %%
-site_map = {
-    "aha": (-8, 0),
-    "lupa": (-7, -200),
-}
 
 
 # %%
@@ -337,8 +341,10 @@ def classify_bboxes(image: Image, boxes, anot, wrappers):
                     continue
                 overlap = calculate_overlap(block["box"], box)
 
-                if overlap > 0.65: # NOTE: modify if there are incorrect labels, because of segment bbox overlap
-                    ner_tags[i] = cls2id[block["class_id"]]
+                if overlap > 0.60: # NOTE: modify if there are incorrect labels, because of segment bbox overlap
+                    # author_name and parent_reference always have priority, since they can be nested inside other segments
+                    if cls2id[block["class_id"]] == cls2id["author_name"] or cls2id[block["class_id"]] == cls2id["parent_reference"] or ner_tags[i] == 0:
+                        ner_tags[i] = cls2id[block["class_id"]]
 
                     if block["class_id"] == "author_name":
                         used_author_bbox.add(k)
@@ -372,7 +378,7 @@ def classify_bboxes(image: Image, boxes, anot, wrappers):
 
 # %%
 def check_all_same_length(annots):
-     return len(annots["image"]) == len(annots["segment_boxes"]) == len(annots["id"]) == len(annots["html"]) == len(annots["hierarchy"])
+     return len(annots["image"]) == len(annots["segment_boxes"]) == len(annots["id"]) == len(annots["html"])# == len(annots["hierarchy"])
 
 # %%
 def make_layoutv2_dataset(annots):
@@ -403,6 +409,8 @@ def make_layoutv2_dataset(annots):
 
             if ner_tags is None:
                 print(f" for {annots['id'][idx:idx+step][i]}. Skipping")
+                os.remove(DS_ROOT / annots['image'][idx+i])
+                print(f"Removed {annots['image'][idx+i]}")
                 continue
 
             words.append(encoding.words[i])
@@ -449,10 +457,14 @@ with open( DS_ROOT / f"{dataset_name}.pkl", "wb") as f:
 ds
 
 # %%
-item = ds[68]
+item = ds[651]
 
 print(item["image"])
 im = img.open(DS_ROOT / item["image"]).convert("RGB")
 draw_cls_boxes(im, item["boxes"], item["word_labels"], item["start_end_labels"])
 im.show()
 # seznamzpravy-5476-6.png # has issues
+
+# problematic:
+# final-2023-05-09-[gara]-split/garaz-933-1-0-final-2023-05-09-[gara]-split.png
+# final-2023-05-09-[gara]-split/garaz-933-1-1-final-2023-05-09-[gara]-split.png
