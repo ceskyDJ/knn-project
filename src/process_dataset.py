@@ -308,7 +308,8 @@ def classify_bboxes(image: Image, boxes, anot, wrappers):
         to_del = []
         for j,(k,comment_boxes, wrapper_box) in enumerate(comments):
             # skip comment segments, which could no possibly contain the current word
-            if calculate_overlap(wrapper_box, box) <= 0:
+            wrapper_overlap = calculate_overlap(wrapper_box, box)
+            if wrapper_overlap <= 0:
                 if box[1] > wrapper_box[1]:
                     to_del.append(j)
                 continue
@@ -328,6 +329,9 @@ def classify_bboxes(image: Image, boxes, anot, wrappers):
                             start_idx[k] = i
                         if i > end_idx.get(k, -1):
                             end_idx[k] = i
+            # we should get here only once for each word (since it should be in exactly one wrapper)
+            # so we can safely ignore all other wrappers, and move on to the next word
+            continue
 
     # finalize start-end label creation
     for k, comment_boxes in anot.items():
