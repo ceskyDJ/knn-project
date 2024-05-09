@@ -3,6 +3,7 @@ import os
 import time
 import math
 import shutil
+from typing import Any
 import pandas as pd
 import numpy as np
 from pathlib import Path
@@ -24,7 +25,7 @@ from preprocess_images import cut_off_excess, enhance_image
 DS_ROOT = Path("/media/filip/warehouse/fit/knn/v2/datasets/")
 # SITE_ROOT = Path(__file__).parent.parent / "datasets/example-data-garaz-cz/extended_output_data/garaz"
 # SITE_ROOT = Path("..") / "datasets/example-seznam/seznamzpravy"
-# GARAZ_ROOT= Path("/media/filip/warehouse/fit/knn/merged-data/extended_output_data/garaz")
+GARAZ_ROOT= Path("/media/filip/warehouse/fit/knn/merged-data/extended_output_data/garaz")
 # SZ_ROOT= Path("/media/filip/warehouse/fit/knn/merged-data/extended_output_data/seznamzpravy")
 # NOVINKY_ROOT= Path("/media/filip/warehouse/fit/knn/merged-data/extended_output_data/novinky")
 # SPORT_ROOT= Path("/media/filip/warehouse/fit/knn/merged-data/extended_output_data/sport")
@@ -60,7 +61,17 @@ se_cls2id = {
 }
 
 # %%
-def traverse_site_directory(root_dir, new_dir):
+def filter_author_in_date(segments: dict[str, list[dict[str, Any]]]) -> bool: 
+    for _, boxes in segments.items():
+        author_bounding_box = [b for b in boxes if b["class_id"] == "author_name"][0]["box"]
+        date_bounding_box = [b for b in boxes if b["class_id"] == "date_published"][0]["box"]
+
+        if author_bounding_box[0] >= date_bounding_box[0] and author_bounding_box[1] >= date_bounding_box[1] and author_bounding_box[2] <= date_bounding_box[2] and author_bounding_box[3] <= date_bounding_box[3]:
+            return True
+    return False
+
+# %%
+def traverse_site_directory(root_dir, new_dir, dataset_name: str):
     site_name = root_dir.parts[-1]
     data = {"image": [], "segment_boxes": [], "id": [], "html": [], "hierarchy": [], "all_boxes": [], "wrappers": []}
 
@@ -98,7 +109,7 @@ def traverse_site_directory(root_dir, new_dir):
 
 
 
-                    image_file_id = os.path.basename(root_dir) + "-" + str(Path(root).name) + "-" + Path(image_file).stem # [site_name]-[subdir_num]-[file_num]
+                    image_file_id = os.path.basename(root_dir) + "-" + str(Path(root).name) + "-" + Path(image_file).stem + "-" + dataset_name # [site_name]-[subdir_num]-[file_num]-[ds_name]
                     new_image_destination_path = os.path.join(new_dir, os.path.basename(image_file_id+".png"))
 
 
@@ -111,11 +122,15 @@ def traverse_site_directory(root_dir, new_dir):
                     cut_img.save(new_image_destination_path)
 
 
-                    im_enhance = img.open(new_image_destination_path)
-                    im_enhance = enhance_image(im_enhance, contrast_f=1.7, bright_f=1, gray=False, binary=False)
-                    im_enhance.save(new_image_destination_path)
+                    # im_enhance = img.open(new_image_destination_path)
+                    # im_enhance = enhance_image(im_enhance, contrast_f=1.3, bright_f=1, gray=True, binary=False)  # TODO(filip): remove if not needed when date black
+                    # im_enhance.save(new_image_destination_path)
 
-
+                    # TODO(filip): only run for sites that require it
+                    # skip incorrect annotations
+                    if filter_author_in_date(filtered_segments):
+                        print(f"Error: found author_in_date {image_file_id}")
+                        continue
 
                     data["all_boxes"].append(modified_segments)
                     data["segment_boxes"].append(filtered_segments)
@@ -123,13 +138,8 @@ def traverse_site_directory(root_dir, new_dir):
 
                     data["id"].append(image_file_id)
                     data["html"].append(html_file)
-                    data["image"].append(image_file_id + ".png")
+                    data["image"].append(f"{dataset_name}/{image_file_id}.png")
                     
-
-
-
-
-                    # shutil.copy(image_file, new_image_destination_path)
                     
                     with open(hierarchy_file, "rb") as f:
                         data["hierarchy"].append(pickle.load(f))
@@ -139,11 +149,15 @@ def traverse_site_directory(root_dir, new_dir):
 # %%
 # dataset_name = "llmv2-flat-2023-04-30-[garaz_novinky_sport_zive]"
 # dataset_name = "llmv2-v2-2023-05-08-[aha]"
-dataset_name = "llmv2-v2-2023-05-08-[auto]-enhanced-no-bin"
+# dataset_name = "llmv2-v2-2023-05-08-[auto]-enhanced-gray"
+
+# dataset_name = "llmv2-v2-2023-05-09-[garaz]-no-2"
+dataset_name = "llmv2-v2-2023-05-09-[sport]-tmp-remove"
+
 
 # %%
 # site_list = [SZ_ROOT, GARAZ_ROOT, NOVINKY_ROOT, SPORT_ROOT, ZIVE_ROOT]
-site_list = [AUTO_ROOT]
+site_list = [GARAZ_ROOT]
 # site_list = [GARAZ_ROOT, ZIVE_ROOT]
 # NEW_FLAT_DIRECTORY_PATH = "../datasets/flat/llmv2-flat-2023-04-29-[speed]"
 NEW_FLAT_DIRECTORY_PATH = DS_ROOT / dataset_name
@@ -151,7 +165,7 @@ NEW_FLAT_DIRECTORY_PATH = DS_ROOT / dataset_name
 data = {}
 
 for site in site_list:
-    newData = traverse_site_directory(site, NEW_FLAT_DIRECTORY_PATH)
+    newData = traverse_site_directory(site, NEW_FLAT_DIRECTORY_PATH, dataset_name)
     data.update({
         "all_boxes": data.get("all_boxes", []) + newData.get("all_boxes", []),
         "segment_boxes": data.get("segment_boxes", []) + newData.get("segment_boxes", []),
@@ -177,7 +191,7 @@ print("id:", data["id"][0])
 (data["wrappers"][0])
 
 # %%
-len(data["segment_boxes"][0].keys())
+(data["segment_boxes"])
 
 # %%
 def unnormalize_box(bbox, width, height):
@@ -237,7 +251,7 @@ def calculate_overlap(container, box2):
     :param container list[float]: Container bbox
     :param box2 list[float]: Bbox of interest
     """
-    container = offset_bbox(-8, 0, container)  # TODO(filip): 
+    # container = offset_bbox(-7, 0, container)  # TODO(filip): 
     x0_inter = max(container[0], box2[0])
     y0_inter = max(container[1], box2[1])
     x1_inter = min(container[2], box2[2])
@@ -254,7 +268,7 @@ def calculate_overlap(container, box2):
 
 
 # %%
-def detect_incorrect_seznam():
+def detect_incorrect_annot():
     # TODO(filip): works with classified bboxes and size of image.
     #              If the proportion of "O" labels is too high in relation to
     #              the image size and the number of "author" labels -> incorrect ground-truth
@@ -303,11 +317,14 @@ def classify_bboxes(image: Image, boxes, anot, wrappers):
 
     comments = [(k, comment_boxes, wrappers[k]["wrapper"]) for k, comment_boxes in anot.items()]
 
+    total_author_bbox = sum([1 for _, comment_boxes in anot.items() if len([1 for c in comment_boxes if c["class_id"] == "author_name"]) > 0])
+    used_author_bbox = set()
+
     for i,box in enumerate(boxes):
         box = unnormalize_box(box, width, height)
         to_del = []
         for j,(k,comment_boxes, wrapper_box) in enumerate(comments):
-            # skip comment segments, which could no possibly contain the current word
+            # skip comment segments, which could not possibly contain the current word
             wrapper_overlap = calculate_overlap(wrapper_box, box)
             if wrapper_overlap <= 0:
                 if box[1] > wrapper_box[1]:
@@ -320,8 +337,12 @@ def classify_bboxes(image: Image, boxes, anot, wrappers):
                     continue
                 overlap = calculate_overlap(block["box"], box)
 
-                if overlap > 0.65: # NOTE: modify if there incorrect labels, because of segment bbox overlap
+                if overlap > 0.65: # NOTE: modify if there are incorrect labels, because of segment bbox overlap
                     ner_tags[i] = cls2id[block["class_id"]]
+
+                    if block["class_id"] == "author_name":
+                        used_author_bbox.add(k)
+
 
                     # non-foolproof way of finding start and end of comments
                     if cls2id[block["class_id"]] != 0:
@@ -332,6 +353,10 @@ def classify_bboxes(image: Image, boxes, anot, wrappers):
             # we should get here only once for each word (since it should be in exactly one wrapper)
             # so we can safely ignore all other wrappers, and move on to the next word
             continue
+    
+    if total_author_bbox != len(used_author_bbox):
+        print(f"Found invalid annot: {len(used_author_bbox)}/{total_author_bbox}", end="")
+        return None, None
 
     # finalize start-end label creation
     for k, comment_boxes in anot.items():
@@ -368,20 +393,26 @@ def make_layoutv2_dataset(annots):
     for idx in range(0, num_annots-step, step):
         print(f"{idx+1}/{num_annots}")
 
-        ids.extend(annots["id"][idx:idx+step])
-
-        image = [img.open(Path(NEW_FLAT_DIRECTORY_PATH) / f).convert("RGB") for f in annots["image"][idx:idx+step]]
+        image = [img.open(DS_ROOT / f).convert("RGB") for f in annots["image"][idx:idx+step]]
+        local_ids = annots["id"][idx:idx+step]
 
         encoding = processor(image, return_tensors="pt")
 
         for i in range(step):
             ner_tags, start_end_tags = classify_bboxes(image[i], encoding.boxes[i], annots["segment_boxes"][idx+i], annots["wrappers"][idx+i])
 
+            if ner_tags is None:
+                print(f" for {annots['id'][idx:idx+step][i]}. Skipping")
+                continue
+
             words.append(encoding.words[i])
             boxes.append(encoding.boxes[i])
             images.append(annots["image"][idx+i])
             word_labels.append(ner_tags)
             start_end_labels.append(start_end_tags)
+            ids.append(local_ids[i])
+
+
 
     word_label_feature = Sequence(feature=ClassLabel(num_classes=len(cls2id.values()), names=list(cls2id.keys())))
     se_label_feature = Sequence(feature=ClassLabel(num_classes=len(se_cls2id.values()), names=list(se_cls2id.keys())))
@@ -418,14 +449,10 @@ with open( DS_ROOT / f"{dataset_name}.pkl", "wb") as f:
 ds
 
 # %%
-item = ds[9]
+item = ds[68]
 
-# %%
-item["boxes"]
-
-# %%
 print(item["image"])
-im = img.open(Path(NEW_FLAT_DIRECTORY_PATH) / item["image"])
+im = img.open(DS_ROOT / item["image"]).convert("RGB")
 draw_cls_boxes(im, item["boxes"], item["word_labels"], item["start_end_labels"])
 im.show()
 # seznamzpravy-5476-6.png # has issues

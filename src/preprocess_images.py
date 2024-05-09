@@ -10,7 +10,7 @@ AHA_ROOT= Path("/media/filip/warehouse/fit/knn/v2/crawled-data-v2/extended_outpu
 AUTO_ROOT= Path("/media/filip/warehouse/fit/knn/v2/crawled-data-v2/extended_output_data/auto/")
 
 # %%
-def cut_image(image, save_path, keep_top=True, percentage=0.5):
+def cut_image(image: Image, save_path, keep_top=True, percentage=0.5) -> Image:
     width, height = image.size
 
     if percentage < 0 or percentage > 1:
@@ -55,7 +55,7 @@ def find_bottom_most_wrapper(bboxes):
 # %%
 def find_top_most_wrapper(bboxes):
     min_y = 0
-    for c, ws in bboxes.items():
+    for _, ws in bboxes.items():
         bottom_y = ws["wrapper"][1]
         min_y = min_y if bottom_y > min_y else bottom_y
     return min_y
@@ -63,12 +63,12 @@ def find_top_most_wrapper(bboxes):
 
 # %%
 def cut_off_excess(image_path: Path|str, save_path: Path|str|None, bboxes, site: str):
+    image = img.open(image_path)
     if site not in site_map.keys():
-        return
+        return image
     cut_args = site_map[site]
 
-    image = img.open(image_path)
-    width, height = image.size
+    _, height = image.size
 
 
     padding = 40
@@ -176,22 +176,22 @@ def enhance_image(image, contrast_f: float, bright_f: float, gray: bool, binary:
 
 
 
-# %%
-image = img.open(AUTO_ROOT / "388/screenshot/1.png")
-image = cut_image(image, None, True, 0.3)
-
-# %%
-image.show()
-
-# %%
-enh_img = image
-# enh_img = increase_brightness(enh_img, 1.1)
-enh_img = increase_contrast(enh_img, 1.3)
-
-enh_img = image_to_grayscale(enh_img)
-
-
-enh_img.show()
-
-# %%
-image = enh_img.convert("RGB")
+# # %%
+# image = img.open(AUTO_ROOT / "388/screenshot/1.png")
+# image = cut_image(image, None, True, 0.3)
+#
+# # %%
+# image.show()
+#
+# # %%
+# enh_img = image
+# # enh_img = increase_brightness(enh_img, 1.1)
+# enh_img = increase_contrast(enh_img, 1.3)
+#
+# enh_img = image_to_grayscale(enh_img)
+#
+#
+# enh_img.show()
+#
+# # %%
+# image = enh_img.convert("RGB")
