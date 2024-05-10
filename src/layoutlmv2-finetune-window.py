@@ -19,6 +19,7 @@ from datasets import Dataset
 from sklearn.model_selection import train_test_split
 import matplotlib.pyplot as plt
 import utils as knn_utils
+from transform_dataset import se_to_blob
 
 
 import torch
@@ -27,34 +28,6 @@ from torch import nn
 from torch.nn import BCEWithLogitsLoss, CrossEntropyLoss, MSELoss
 import pickle
 
-# %%
-# cls2id = {
-#   "O": 0,
-#   "text": 1,
-#   "author_name": 2,
-#   "date_published": 3,
-# }
-#
-# id2cls = {
-#     0 : "O",
-#     1 : "text",
-#     2 : "author_name",
-#     3 : "date_published",
-# }
-#
-# se_id2cls = {
-#     0: "O",
-#     1: "B-Start",
-#     2: "B-End",
-# }
-#
-# se_cls2id = {
-#     "O":       0,
-#     "B-Start": 1,
-#     "B-End":   2,
-# }
-
-# %%
 def unnormalize_box(bbox, width, height):
      return [
          width * (bbox[0] / 1000),
@@ -72,19 +45,18 @@ def unnormalize_ls_box(bbox, width, height):
      ]
 
 
-# %%
 def load_dataset(filename: str|Path) -> Dataset:
     with open(filename, "rb") as f:
         return pickle.load(f)
 
 # %%
-CHECKPOINT_DIR = Path("../checkpoints")
+CHECKPOINT_DIR = Path("/media/filip/warehouse/fit/knn/checkpoints")
 
 # %%
 timestamp = int(time())
 
 # %%
-check_point_name = "final_se_garaz_lidovky_aha_auto_e15" + "-" + str(timestamp)
+check_point_name = "final_se_garaz_lidovky_aha_auto_e15-2-layer-weighted-loss" + "-" + str(timestamp)
 
 # %%
 (CHECKPOINT_DIR / check_point_name).mkdir(exist_ok=True, parents=True)
@@ -104,6 +76,10 @@ train_ds, test_ds = knn_utils.construct_dataset([
 ])
 
 # %%
+train_ds = se_to_blob(train_ds)
+test_ds = se_to_blob(test_ds)
+
+# %%
 with open(CHECKPOINT_DIR / check_point_name / "train_ds.pkl", "wb") as f:
     pickle.dump(train_ds, f)
 with open(CHECKPOINT_DIR / check_point_name / "test_ds.pkl", "wb") as f:
@@ -114,13 +90,17 @@ with open(CHECKPOINT_DIR / check_point_name / "test_ds.pkl", "wb") as f:
 
 # %%
 labels = train_ds.features["word_labels"].feature.names
-se_labels = train_ds.features["start_end_labels"].feature.names
+# se_labels = train_ds.features["start_end_labels"].feature.names
+blob_labels = train_ds.features["blob_labels"].feature.names
 
 id2cls = {k: v for k,v in enumerate(labels)}
 cls2id = {v: k for k,v in enumerate(labels)}
 
-se_id2cls = {k: v for k,v in enumerate(se_labels)}
-se_cls2id = {v: k for k,v in enumerate(se_labels)}
+# se_id2cls = {k: v for k,v in enumerate(se_labels)}
+# se_cls2id = {v: k for k,v in enumerate(se_labels)}
+
+blob_id2cls = {k: v for k,v in enumerate(blob_labels)}
+blob_cls2id = {v: k for k,v in enumerate(blob_labels)}
 
 
 # %%
@@ -137,8 +117,9 @@ features = Features({
     # 'labels': Sequence(feature=Value(dtype='int64')),
 
 
-    'start_end_labels': Sequence(ClassLabel(names=se_labels)),
+    # 'start_end_labels': Sequence(ClassLabel(names=se_labels)),
     # 'parent_rels': Sequence(Value(dtype='int64')),
+    'blob_labels': Sequence(ClassLabel(names=blob_labels)),
 })
 
 # def preprocess_data(boxes, words, ner_tags, img_path):
@@ -158,14 +139,17 @@ def preprocess_data(examples):
   overflow_to_sample_mapping = encoded_inputs.pop('overflow_to_sample_mapping')
 
 
-  encoded_inputs_start_end = processor(image, examples["words"], boxes=examples["boxes"], word_labels=examples["start_end_labels"], stride=128,
+  # encoded_inputs_start_end = processor(image, examples["words"], boxes=examples["boxes"], word_labels=examples["start_end_labels"], stride=128,
+  #                            padding="max_length", truncation=True, max_length=512, return_overflowing_tokens=True, return_offsets_mapping=True)
+  # encoded_inputs["start_end_labels"] = encoded_inputs_start_end["labels"]
+
+  encoded_inputs_start_end = processor(image, examples["words"], boxes=examples["boxes"], word_labels=examples["blob_labels"], stride=128,
                              padding="max_length", truncation=True, max_length=512, return_overflowing_tokens=True, return_offsets_mapping=True)
- 
+  encoded_inputs["blob_labels"] = encoded_inputs_start_end["labels"]
 
-  # encoded_inputs_start_end = encoded_inputs.pop('offset_mapping')
-  # overflow_to_sample_mapping = encoded_inputs.pop('overflow_to_sample_mapping')
 
-  encoded_inputs["start_end_labels"] = encoded_inputs_start_end["labels"]
+
+
 
   # encoded_inputs["parent_rels"] = examples["parent_rels"]
   
@@ -179,7 +163,6 @@ train_dataset.set_format(type="torch")
 # train_dataset.set_format(type="torch")
 # train_dataset = train_dataset.to_iterable_dataset()
 
-# %%
 test_dataset = test_ds.map(preprocess_data, batched=True, features=features, batch_size=5, remove_columns=test_ds.column_names)
 test_dataset.set_format(type="torch")
 
@@ -217,7 +200,6 @@ def format_metrics(metrics):
                 lines.append(f"    {k}: {v}")
     return lines
 
-# %%
 metric: Any = load_metric("seqeval")
 return_entity_level_metrics = True
 
@@ -242,18 +224,29 @@ def compute_metrics(p):
         for prediction, label in zip(predictions_words, word_labels)
     ]
 
-    true_predictions_se = [
-        [se_id2cls[p] for (p, l) in zip(prediction, label) if l != -100]
+    # true_predictions_se = [
+    #     [se_id2cls[p] for (p, l) in zip(prediction, label) if l != -100]
+    #     for prediction, label in zip(predictions_se, se_labels)
+    # ]
+    # true_labels_se = [
+    #     [se_id2cls[l] for (p, l) in zip(prediction, label) if l != -100]
+    #     for prediction, label in zip(predictions_se, se_labels)
+    # ]
+
+
+    true_predictions_blob = [
+        [blob_id2cls[p] for (p, l) in zip(prediction, label) if l != -100]
         for prediction, label in zip(predictions_se, se_labels)
     ]
-    true_labels_se = [
-        [se_id2cls[l] for (p, l) in zip(prediction, label) if l != -100]
+    true_labels_blob = [
+        [blob_id2cls[l] for (p, l) in zip(prediction, label) if l != -100]
         for prediction, label in zip(predictions_se, se_labels)
     ]
 
     # print(f"{true_labels}")
     results = metric.compute(predictions=true_predictions, references=true_labels)
-    results_se = metric.compute(predictions=true_predictions_se, references=true_labels_se)
+    # results_se = metric.compute(predictions=true_predictions_se, references=true_labels_se)
+    results_blob = metric.compute(predictions=true_predictions_blob, references=true_labels_blob)
     if return_entity_level_metrics:
         # Unpack nested dictionaries
         final_results = {}
@@ -266,14 +259,15 @@ def compute_metrics(p):
             else:
                 final_word_results[key] = value
 
-        for key, value in results_se.items():
+        for key, value in results_blob.items():
             if isinstance(value, dict):
                 for n, v in value.items():
                     final_se_results[f"{key}_{n}"] = v
             else:
                 final_se_results[key] = value
         final_results["words"] = final_word_results
-        final_results["start_end"] = final_se_results
+        # final_results["start_end"] = final_se_results
+        final_results["blob"] = final_se_results
         return final_results
     else:
         return {
@@ -294,12 +288,14 @@ class CommentTrainer(Trainer):
 logging_steps = 10
 args = TrainingArguments(
     output_dir=str(CHECKPOINT_DIR / check_point_name), # dir to store checkpoints
-    max_steps=3000,
+    max_steps=1501,
+    save_steps=500,
     logging_steps=logging_steps,
     warmup_ratio=0.1, # small warmup
     fp16=True, # mixed precision (less memory) -- requires CUDA
     push_to_hub=False, 
-    label_names=["labels", "start_end_labels"]
+    # label_names=["labels", "start_end_labels"]
+    label_names=["labels", "blob_labels"]
 )
 
 # %%
@@ -315,7 +311,7 @@ torch.cuda.empty_cache()
 
 
 # %%
-trainer.train(resume_from_checkpoint=str(CHECKPOINT_DIR / check_point_name / "checkpoint-1000"))
+trainer.train()
 
 # %%
 predictions, labels, metrics = trainer.predict(test_dataset=test_dataset)
@@ -328,8 +324,8 @@ predictions, labels, metrics = trainer.predict(test_dataset=test_dataset)
 # print(metrics)
 m_lines = format_metrics(metrics)
 print("\n".join(m_lines))
-# with open(CHECKPOINT_DIR / check_point_name / "test_metrics.txt", "w") as f:
-#     f.write("\n".join(m_lines))
+with open(CHECKPOINT_DIR / check_point_name / "test_metrics.txt", "w") as f:
+    f.write("\n".join(m_lines))
 
 
 

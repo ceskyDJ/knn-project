@@ -31,24 +31,26 @@ GARAZ_ROOT= Path("/media/filip/warehouse/fit/knn/merged-data/extended_output_dat
 # NOVINKY_ROOT= Path("/media/filip/warehouse/fit/knn/merged-data/extended_output_data/novinky")
 # SPORT_ROOT= Path("/media/filip/warehouse/fit/knn/merged-data/extended_output_data/sport")
 # ZIVE_ROOT= Path("/media/filip/warehouse/fit/knn/merged-data/extended_output_data/zive")
-AHA_ROOT = Path("/media/filip/warehouse/fit/knn/v2/crawled-data-v2/extended_output_data/aha/")
-AUTO_ROOT = Path("/media/filip/warehouse/fit/knn/v2/crawled-data-v2/extended_output_data/auto/")
+AHA_ROOT = Path("/media/filip/warehouse/fit/knn/v3/crawled-data-v3/extended_output_data/aha/")
+AUTO_ROOT = Path("/media/filip/warehouse/fit/knn/v3/crawled-data-v3/extended_output_data/auto/")
+LIDOVKY_ROOT = Path("/media/filip/warehouse/fit/knn/v3/crawled-data-v3/extended_output_data/lidovky/")
+E15_ROOT = Path("/media/filip/warehouse/fit/knn/v3/crawled-data-v3/extended_output_data/e15/")
 # SITE_ROOT = Path("/media/filip/warehouse/fit/knn/merged-data/extended_output_data/idnes/")
 
 # %%
 cls2id = {
   "O": 0,
-  "text": 1,
-  "author_name": 2,
-  "date_published": 3,
-  "parent_reference": 4,
+  "B-Text": 1,
+  "B-Author_name": 2,
+  "B-Date_published": 3,
+  "B-Parent_reference": 4,
 }
 id2cls = {
     0 : "O",
-    1 : "text",
-    2 : "author_name",
-    3 : "date_published",
-    4 : "parent_reference",
+    1 : "B-Text",
+    2 : "B-Author_name",
+    3 : "B-Date_published",
+    4 : "B-Parent_reference",
 }
 
 se_id2cls = {
@@ -67,7 +69,11 @@ se_cls2id = {
 MAX_HEIGHTS = defaultdict(lambda: math.inf, {
     "garaz": 1500,
     "seznamzpravy": 1500,
-    "sport": 1500
+    "sport": 1500,
+    "aha": 1500,
+    "auto": 2000,
+    "lidovky": 1500,
+    "e15": 3500,
 })
 
 # %%
@@ -127,7 +133,12 @@ def traverse_site_directory(root_dir, new_dir, dataset_name: str):
                     _, height = cut_img.size
 
                     if height > MAX_HEIGHTS[site_name]:
-                        img_list = split_at_max_size(cut_img, wrappers, [modified_segments, filtered_segments], int(MAX_HEIGHTS[site_name]))
+                        try:
+                            img_list = split_at_max_size(cut_img, wrappers, [modified_segments, filtered_segments], int(MAX_HEIGHTS[site_name]))
+                        except:
+                            print(f"split_at_max_size failed for: {str(Path(root).name)}{file}. Skipping")
+                            continue
+
                         counter = 0
                     else:
                         img_list = [(cut_img, wrappers, None, [modified_segments, filtered_segments])]
@@ -180,12 +191,12 @@ def traverse_site_directory(root_dir, new_dir, dataset_name: str):
 # dataset_name = "llmv2-v2-2023-05-08-[auto]-enhanced-gray"
 
 # dataset_name = "llmv2-v2-2023-05-09-[garaz]-no-2"
-dataset_name = "final-2023-05-09-[gara]-split"
+dataset_name = "final-2023-05-09-[e15]-split"
 
 
 # %%
 # site_list = [SZ_ROOT, GARAZ_ROOT, NOVINKY_ROOT, SPORT_ROOT, ZIVE_ROOT]
-site_list = [GARAZ_ROOT]
+site_list = [E15_ROOT]
 # site_list = [GARAZ_ROOT, ZIVE_ROOT]
 # NEW_FLAT_DIRECTORY_PATH = "../datasets/flat/llmv2-flat-2023-04-29-[speed]"
 NEW_FLAT_DIRECTORY_PATH = DS_ROOT / dataset_name
@@ -395,7 +406,7 @@ def make_layoutv2_dataset(annots):
     processor = LayoutLMv2ImageProcessor.from_pretrained("microsoft/layoutlmv2-base-uncased", tesseract_config="-l ces")
     assert(isinstance(processor, LayoutLMv2ImageProcessor))
 
-    step = 10
+    step = 5
     for idx in range(0, num_annots-step, step):
         print(f"{idx+1}/{num_annots}")
 
@@ -457,7 +468,7 @@ with open( DS_ROOT / f"{dataset_name}.pkl", "wb") as f:
 ds
 
 # %%
-item = ds[651]
+item = ds[32]
 
 print(item["image"])
 im = img.open(DS_ROOT / item["image"]).convert("RGB")

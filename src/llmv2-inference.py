@@ -9,20 +9,24 @@ import torch
 import numpy as np
 import utils as knn_utils
 
-# %%
-cls2id = {
-  "O": 0,
-  "text": 1,
-  "author_name": 2,
-  "date_published": 3,
-}
 
-id2cls = {
-    0 : "O",
-    1 : "text",
-    2 : "author_name",
-    3 : "date_published",
-}
+# %%
+DS_ROOT = Path("/media/filip/warehouse/fit/knn/datasets/")
+dataset_name = "final-2023-05-09-[gara]-split"
+
+dataset_path = DS_ROOT / f"{dataset_name}.pkl"
+ds = knn_utils.load_dataset(dataset_path)
+
+# %%
+# labels = ds.features["word_labels"].feature.names
+# # se_labels = ds.features["start_end_labels"].feature.names
+# blob_labels = ds.features["blob_labels"].feature.names
+#
+# id2cls = {k: v for k,v in enumerate(labels)}
+# cls2id = {v: k for k,v in enumerate(labels)}
+#
+# se_id2cls = {k: v for k,v in enumerate(se_labels)}
+# se_cls2id = {v: k for k,v in enumerate(se_labels)}
 
 se_id2cls = {
     0: "O",
@@ -37,20 +41,34 @@ se_cls2id = {
 }
 
 
-# %%
-dataset_name = "llmv2-flat-2023-04-30-[novinky]"
-dataset_path = "../datasets/flat/" + dataset_name + ".pkl"
-ds = knn_utils.load_dataset(dataset_path)
+blob_id2cls = {
+    0: "O",
+    1: "B-Comm",
+    2: "I-Comm",
+}
 
-# %%
-labels = ds.features["word_labels"].feature.names
-se_labels = ds.features["start_end_labels"].feature.names
+blob_cls2id = {
+    "O":       0,
+    "B-Comm": 1,
+    "I-Comm":   2,
+}
 
-id2cls = {k: v for k,v in enumerate(labels)}
-cls2id = {v: k for k,v in enumerate(labels)}
 
-se_id2cls = {k: v for k,v in enumerate(se_labels)}
-se_cls2id = {v: k for k,v in enumerate(se_labels)}
+cls2id = {
+  "O": 0,
+  "B-Text": 1,
+  "B-Author_name": 2,
+  "B-Date_published": 3,
+  "B-Parent_reference": 4,
+}
+id2cls = {
+    0 : "O",
+    1 : "B-Text",
+    2 : "B-Author_name",
+    3 : "B-Date_published",
+    4 : "B-Parent_reference",
+}
+
 
 # %%
 def unnormalize_box(bbox, width, height):
@@ -62,7 +80,9 @@ def unnormalize_box(bbox, width, height):
      ]
 
 # %%
-model_path = "./custom_llmv2_big_ds_2/checkpoint-500"
+CHECKPOINT_DIR = Path("/media/filip/warehouse/fit/knn/checkpoints/final_se_garaz_lidovky_aha_auto_e15-2-layer-1715368093")
+# CHECKPOINT_DIR = Path("../checkpoints")
+model_path = CHECKPOINT_DIR  / "checkpoint-1000"
 # model_path = "./layoutlmv2-finetuned-window/checkpoint-1000"
 model = LayoutLMv2ForCustomClassification.from_pretrained(model_path)
 
@@ -74,8 +94,9 @@ assert(isinstance(processor, LayoutLMv2Processor))
 # img_path = Path("../datasets/example-seznam/seznamzpravy/1/screenshot/6.png")
 # img_path = Path("../datasets/custom_youtube/white_bg/data/yt_big_1.png")  # NOTE: this kinda works if training on yt
 # img_path = Path("../datasets/example-seznam/seznamzpravy/11/screenshot/5.png")  # NOTE: not really
-img_path = Path("../datasets/custom_sz/sz_1.png")  # NOTE: seems to work
-# img_path = Path("../datasets/example-seznam/seznamzpravy/4/screenshot/4.png")   # NOTE: works ok
+# img_path = Path("../datasets/custom_sz/sz_1.png")  # NOTE: seems to work
+# img_path = Path("../datasets/custom/auto-crop-1.png")  # NOTE: nope
+img_path = Path("../datasets/example-seznam/seznamzpravy/4/screenshot/4.png")   # NOTE: works ok
 # img_path = Path("../datasets/example-seznam/garaz/5/screenshot/3.png")   # NOTE: kinda works
 # img_path = Path("../datasets/example-seznam/garaz/5/screenshot/2.png")   # NOTE: kinda works (no se)
 # img_path = Path("../datasets/example-seznam/garaz/6/screenshot/2.png")   # NOTE:
@@ -116,7 +137,8 @@ with torch.no_grad():
 # print(outputs.logits.shape)
 
 predictions = outputs.logits.argmax(-1).squeeze().tolist()
-start_end_predictions = outputs.start_end_logits.argmax(-1).squeeze().tolist()
+# start_end_predictions = outputs.start_end_logits.argmax(-1).squeeze().tolist()
+blob_predictions = outputs.blob_logits.argmax(-1).squeeze().tolist()
 # rel_predictions = outputs.parent_rels_logits.argmax(-1).squeeze().tolist()
 token_boxes = encoding.bbox.squeeze().tolist()
 
@@ -136,11 +158,13 @@ if outputs.logits.shape[0] != 1:
         if i == 0:
             true_predictions += [id2cls[pred_] for idx, pred_ in enumerate(pred) if (not is_subword[idx])]
             true_boxes += [unnormalize_box(box_, width, height) for idx, box_ in enumerate(box) if not is_subword[idx]]
-            true_start_end_predictions += [pred for idx, pred in enumerate(start_end_predictions) if not is_subword[idx]]
+            # true_start_end_predictions += [pred for idx, pred in enumerate(start_end_predictions) if not is_subword[idx]]
+            true_start_end_predictions += [pred for idx, pred in enumerate(blob_predictions) if not is_subword[idx]]
         else:
             true_predictions += [id2cls[pred_] for idx, pred_ in enumerate(pred) if (not is_subword[idx])][1 + STRIDE_COUNT - sum(is_subword[:1 + STRIDE_COUNT]):]
             true_boxes += [unnormalize_box(box_, width, height) for idx, box_ in enumerate(box) if not is_subword[idx]][1 + STRIDE_COUNT - sum(is_subword[:1 + STRIDE_COUNT]):]
-            true_start_end_predictions += [pred for idx, pred in enumerate(start_end_predictions) if not is_subword[idx]][1 + STRIDE_COUNT - sum(is_subword[:1 + STRIDE_COUNT]):]
+            # true_start_end_predictions += [pred for idx, pred in enumerate(start_end_predictions) if not is_subword[idx]][1 + STRIDE_COUNT - sum(is_subword[:1 + STRIDE_COUNT]):]
+            true_start_end_predictions += [pred for idx, pred in enumerate(blob_predictions) if not is_subword[idx]][1 + STRIDE_COUNT - sum(is_subword[:1 + STRIDE_COUNT]):]
 
 
     import itertools
@@ -149,7 +173,8 @@ else:
     is_subword = np.array(offset_mapping.squeeze().tolist())[:,0] != 0
 
     true_predictions = [id2cls[pred] for idx, pred in enumerate(predictions) if not is_subword[idx]]
-    true_start_end_predictions = [pred for idx, pred in enumerate(start_end_predictions) if not is_subword[idx]]
+    true_start_end_predictions = [pred for idx, pred in enumerate(blob_predictions) if not is_subword[idx]]
+    # true_start_end_predictions = [pred for idx, pred in enumerate(start_end_predictions) if not is_subword[idx]]
     # true_rel_predictions = [pred for idx, pred in enumerate(rel_predictions) if not is_subword[idx]]
     true_boxes = [unnormalize_box(box, width, height) for idx, box in enumerate(token_boxes) if not is_subword[idx]]
 
@@ -168,18 +193,34 @@ font = ImageFont.load_default()
 #       return 'other'
 #     return label
 
-label2color = {'author_name':'blue', 'text':'green', 'date_published':'orange', 'O':'violet'}
+# label2color = {'author_name':'blue', 'text':'green', 'date_published':'orange', 'O':'violet', "parent_reference": "red"}
+label2color = {'B-Author_name':'blue', 'B-Text':'green', 'B-Date_published':'orange', 'O':'violet', "B-Parent_reference": "red"}
+label2color = {'B-Comm':'blue', 'I-Comm':'green', 'O':'violet'}
+# se_label = {
+#     0: "",
+#     1: " START",
+#     2: " END",
+# }
+
 se_label = {
-    0: "",
-    1: " START",
-    2: " END",
+    0: "O",
+    1: "B-Comm",
+    2: "I-Comm",
 }
+# se_label = {
+#     0: "",
+#     1: "",
+#     2: "",
+# }
+
 
 i = 0
 for prediction, se_prediction, box in zip(true_predictions, true_start_end_predictions, true_boxes):
-    predicted_label = prediction # iob_to_label(prediction).lower()
-    draw.rectangle(box, outline=label2color[predicted_label])
-    draw.text((box[0]+10, box[1]-10), text=predicted_label + se_label[se_prediction], fill=label2color[predicted_label], font=font)
+    # predicted_label = prediction # iob_to_label(prediction).lower()
+    # draw.rectangle(box, outline=label2color[predicted_label])
+    draw.rectangle(box, outline=label2color[se_label[se_prediction]])
+    # draw.text((box[0]+10, box[1]-10), text=predicted_label + se_label[se_prediction], fill=label2color[predicted_label], font=font)
+    draw.text((box[0]+10, box[1]-10), text=se_label[se_prediction], fill=label2color[se_label[se_prediction]], font=font)
     # draw.text((box[0]+10, box[1]-10), text=predicted_label, fill=label2color[predicted_label], font=font)
 
     # if i == 2:
