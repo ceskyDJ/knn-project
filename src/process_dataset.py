@@ -73,6 +73,9 @@ MAX_HEIGHTS = defaultdict(lambda: math.inf, {
     "e15": 3500,
 })
 
+# %%
+site_list = [AHA_ROOT]
+
 
 # %%
 def filter_author_in_date(segments: dict[str, list[dict[str, Any]]]) -> bool:
@@ -161,13 +164,11 @@ def traverse_site_directory(root_dir, new_dir, dataset_name: str):
 
                         part_image.save(new_image_destination_path)
 
-                        # TODO(filip): remove if not needed when date black
+                        # NOTE: can be used to modify the image, if there are problems with OCR
                         # im_enhance = img.open(new_image_destination_path)
                         # im_enhance = enhance_image(im_enhance, contrast_f=1.3, bright_f=1, gray=True, binary=False)
                         # im_enhance.save(new_image_destination_path)
 
-                        # TODO(filip): only run for sites that require it
-                        # skip incorrect annotations
                         if filter_author_in_date(filtered_segments):
                             print(f"Error: found author_in_date {image_file_id}")
                             continue
@@ -196,16 +197,12 @@ def unnormalize_box(bbox, width, height):
 
 
 # %%
-def draw_boxes(image: Image, boxes, norm=True):
+def draw_boxes(image: Image, boxes):
     draw = ImageDraw.Draw(image)
-
-    # width, height = image.size
 
     for comment_boxes in boxes.values():
         for box in comment_boxes:
             print(box["box"])
-            # if norm:
-            # box = unnormalize_ls_box(box, width, height)
             if box["box"] is None:
                 continue
             draw.rectangle(box["box"], outline="blue", width=2)
@@ -230,7 +227,6 @@ def draw_cls_boxes(image: Image, boxes, labels, se_labels=None):
         se = ""
         if se_labels is not None:
             se = se_label[se_labels[i]]
-            # print(se)
         box = unnormalize_box(box, width, height)
         predicted_label = id2cls[prediction]
         draw.rectangle(box, outline=label2color[predicted_label])  # type: ignore
@@ -415,6 +411,11 @@ def make_layoutv2_dataset(annots):
 
 
 # %%
+DATASET_NAME = "final-2023-05-09-[e15]-split"
+NEW_FLAT_DIRECTORY_PATH = DS_ROOT / DATASET_NAME    
+
+# %%
+data = {}
 for site in site_list:
     newData = traverse_site_directory(site, NEW_FLAT_DIRECTORY_PATH, DATASET_NAME)
     data.update({

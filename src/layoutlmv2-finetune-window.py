@@ -62,11 +62,7 @@ check_point_name = "final_se_garaz_lidovky_aha_auto_e15-2-layer-weighted-loss" +
 (CHECKPOINT_DIR / check_point_name).mkdir(exist_ok=True, parents=True)
 
 # %%
-DS_ROOT = Path("/media/filip/warehouse/fit/knn/datasets/")
-# dataset_name = "final-2023-05-09-[gara]-split"
-# dataset_path = DS_ROOT / f"{dataset_name}.pkl"
-# dataset_img_path = "../datasets/flat/" + dataset_name
-# ds = load_dataset(dataset_path)
+DS_ROOT = Path("../datasets/")
 train_ds, test_ds = knn_utils.construct_dataset([
     "final-2023-05-09-[gara]-split", 
     "final-2023-05-09-[lidovky]-split",
@@ -85,18 +81,15 @@ with open(CHECKPOINT_DIR / check_point_name / "train_ds.pkl", "wb") as f:
 with open(CHECKPOINT_DIR / check_point_name / "test_ds.pkl", "wb") as f:
     pickle.dump(test_ds, f)
 
-# ds = load_dataset("../datasets/example-seznam/seznam_long_1_cls_info.pkl")
-# ds = load_dataset("../datasets/example-seznam/seznam_long_1.pkl")
-
 # %%
 labels = train_ds.features["word_labels"].feature.names
-# se_labels = train_ds.features["start_end_labels"].feature.names
+# se_labels = train_ds.features["start_end_labels"].feature.names # NOTE: uncomment for SE models
 blob_labels = train_ds.features["blob_labels"].feature.names
 
 id2cls = {k: v for k,v in enumerate(labels)}
 cls2id = {v: k for k,v in enumerate(labels)}
 
-# se_id2cls = {k: v for k,v in enumerate(se_labels)}
+# se_id2cls = {k: v for k,v in enumerate(se_labels)} # NOTE: uncomment for SE models
 # se_cls2id = {v: k for k,v in enumerate(se_labels)}
 
 blob_id2cls = {k: v for k,v in enumerate(blob_labels)}
@@ -114,31 +107,20 @@ features = Features({
     'token_type_ids': Sequence(Value(dtype='int64')),
     'bbox': Array2D(dtype="int64", shape=(512, 4)),
     'labels': Sequence(ClassLabel(names=labels)),
-    # 'labels': Sequence(feature=Value(dtype='int64')),
-
-
-    # 'start_end_labels': Sequence(ClassLabel(names=se_labels)),
-    # 'parent_rels': Sequence(Value(dtype='int64')),
+    # 'start_end_labels': Sequence(ClassLabel(names=se_labels)), # NOTE: uncomment for SE models
     'blob_labels': Sequence(ClassLabel(names=blob_labels)),
 })
 
-# def preprocess_data(boxes, words, ner_tags, img_path):
 def preprocess_data(examples):
-  # print("ex:", (examples["words"]))
   image = [Image.open(DS_ROOT / path).convert("RGB") for path in examples["image"]]
-  # image = Image.open(COCO_PATH / "images" / examples["image"]).convert("RGB")
-  # words = words
-  # boxes = boxes
-  # word_labels = ner_tags
-  
   encoded_inputs = processor(image, examples["words"], boxes=examples["boxes"], word_labels=examples["word_labels"], stride=128,
                              padding="max_length", truncation=True, max_length=512, return_overflowing_tokens=True, return_offsets_mapping=True)
-  # print(encoded_inputs.keys())
 
   offset_mapping = encoded_inputs.pop('offset_mapping')
   overflow_to_sample_mapping = encoded_inputs.pop('overflow_to_sample_mapping')
 
 
+  # NOTE: uncomment for SE models
   # encoded_inputs_start_end = processor(image, examples["words"], boxes=examples["boxes"], word_labels=examples["start_end_labels"], stride=128,
   #                            padding="max_length", truncation=True, max_length=512, return_overflowing_tokens=True, return_offsets_mapping=True)
   # encoded_inputs["start_end_labels"] = encoded_inputs_start_end["labels"]
@@ -146,12 +128,6 @@ def preprocess_data(examples):
   encoded_inputs_start_end = processor(image, examples["words"], boxes=examples["boxes"], word_labels=examples["blob_labels"], stride=128,
                              padding="max_length", truncation=True, max_length=512, return_overflowing_tokens=True, return_offsets_mapping=True)
   encoded_inputs["blob_labels"] = encoded_inputs_start_end["labels"]
-
-
-
-
-
-  # encoded_inputs["parent_rels"] = examples["parent_rels"]
   
   return encoded_inputs
 
@@ -159,14 +135,9 @@ def preprocess_data(examples):
 train_dataset = train_ds.map(preprocess_data, batched=True, features=features, batch_size=5, remove_columns=train_ds.column_names)
 train_dataset.set_format(type="torch")
 
-# train_dataset = nds["train"].map(preprocess_data, batched=True, features=features, batch_size=5, remove_columns=ds.column_names)
-# train_dataset.set_format(type="torch")
-# train_dataset = train_dataset.to_iterable_dataset()
-
 test_dataset = test_ds.map(preprocess_data, batched=True, features=features, batch_size=5, remove_columns=test_ds.column_names)
 test_dataset.set_format(type="torch")
 
-# %%
 train_dataloader = DataLoader(train_dataset, batch_size=1) # type: ignore
 test_dataloader = DataLoader(test_dataset, batch_size=2) # type: ignore
 
@@ -182,10 +153,8 @@ gc.collect()
 
 # %%
 model = custom_llmv2_no_se.LayoutLMv2ForCustomClassification.from_pretrained('microsoft/layoutlmv2-base-uncased', num_labels=len(cls2id))
-# model = custom_llmv2_no_se.LayoutLMv2ForCustomClassification.from_pretrained(check_point_name + "/checkpoint-1000", num_labels=len(cls2id))
 model.config.id2label = id2cls
 model.config.label2id = cls2id
-
 
 # %%
 def format_metrics(metrics):
@@ -205,7 +174,6 @@ return_entity_level_metrics = True
 
 def compute_metrics(p):
     predictions, labels = p
-    # predictions = predictions.logits.argmax(-1).squeeze().tolist()
     predictions_words = predictions[0]
     predictions_words = np.argmax(predictions_words, axis=2)
 
@@ -224,6 +192,7 @@ def compute_metrics(p):
         for prediction, label in zip(predictions_words, word_labels)
     ]
 
+    # NOTE: uncomment for SE models
     # true_predictions_se = [
     #     [se_id2cls[p] for (p, l) in zip(prediction, label) if l != -100]
     #     for prediction, label in zip(predictions_se, se_labels)
@@ -243,12 +212,10 @@ def compute_metrics(p):
         for prediction, label in zip(predictions_se, se_labels)
     ]
 
-    # print(f"{true_labels}")
     results = metric.compute(predictions=true_predictions, references=true_labels)
-    # results_se = metric.compute(predictions=true_predictions_se, references=true_labels_se)
+    # results_se = metric.compute(predictions=true_predictions_se, references=true_labels_se) # NOTE: uncomment for SE models
     results_blob = metric.compute(predictions=true_predictions_blob, references=true_labels_blob)
     if return_entity_level_metrics:
-        # Unpack nested dictionaries
         final_results = {}
         final_word_results = {}
         final_se_results = {}
@@ -266,7 +233,7 @@ def compute_metrics(p):
             else:
                 final_se_results[key] = value
         final_results["words"] = final_word_results
-        # final_results["start_end"] = final_se_results
+        # final_results["start_end"] = final_se_results # NOTE: uncomment for SE models
         final_results["blob"] = final_se_results
         return final_results
     else:
@@ -316,12 +283,8 @@ trainer.train()
 # %%
 predictions, labels, metrics = trainer.predict(test_dataset=test_dataset)
 
-# %%
-# res = trainer.evaluate(eval_dataset=train_dataset)
-# res
 
 # %%
-# print(metrics)
 m_lines = format_metrics(metrics)
 print("\n".join(m_lines))
 with open(CHECKPOINT_DIR / check_point_name / "test_metrics.txt", "w") as f:

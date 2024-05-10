@@ -1,3 +1,6 @@
+# modified version of the huggingface  LayoutLMv2ForClassification
+# maily added a second head and the option to use 2 linera layers instead of one
+
 from transformers.utils import ModelOutput
 
 from dataclasses import dataclass
@@ -31,21 +34,16 @@ class LayoutLMv2ForCustomClassification(LayoutLMv2PreTrainedModel):
         self.layoutlmv2 = LayoutLMv2Model(config)
         self.dropout = nn.Dropout(config.hidden_dropout_prob)
 
-        # self.classifier = nn.Linear(config.hidden_size, config.num_labels)
+        # self.classifier = nn.Linear(config.hidden_size, config.num_labels)  # NOTE: for 1L models
 
-        self.classifier = nn.Linear(config.hidden_size, config.hidden_size)
+        self.classifier = nn.Linear(config.hidden_size, config.hidden_size) # NOTE: for 2L models
         self.classifier2 = nn.Linear(config.hidden_size, config.num_labels)
 
-        # self.start_end_classifier = nn.Linear(config.hidden_size, 3)
+        # self.start_end_classifier = nn.Linear(config.hidden_size, 3) # NOTE: for 1L models
 
-        self.start_end_classifier = nn.Linear(config.hidden_size, config.hidden_size)
+        self.start_end_classifier = nn.Linear(config.hidden_size, config.hidden_size) # NOTE: for 2L models
         self.start_end_classifier2 = nn.Linear(config.hidden_size, 3)
-        # self.par_rel1 = nn.Conv2d(1, 2)
-        # self.par_rel2 = nn.Conv2d(2, 1)
-        # self.par_rel1 = nn.Linear(7, 50)
-        # self.par_rel2 = nn.Linear(50, 100)
 
-        # Initialize weights and apply final processing
         self.post_init()
 
     def get_input_embeddings(self):
@@ -62,9 +60,9 @@ class LayoutLMv2ForCustomClassification(LayoutLMv2PreTrainedModel):
         head_mask: Optional[torch.FloatTensor] = None,
         inputs_embeds: Optional[torch.FloatTensor] = None,
         labels: Optional[torch.LongTensor] = None,
-        start_end_labels: Optional[torch.LongTensor] = None, # NOTE: Added
-        parent_rels: Optional[torch.LongTensor] = None, # NOTE: Added
-        blob_labels: Optional[torch.LongTensor] = None, # NOTE: Added
+        start_end_labels: Optional[torch.LongTensor] = None,
+        parent_rels: Optional[torch.LongTensor] = None,
+        blob_labels: Optional[torch.LongTensor] = None,
         output_attentions: Optional[bool] = None,
         output_hidden_states: Optional[bool] = None,
         return_dict: Optional[bool] = None,
@@ -91,11 +89,9 @@ class LayoutLMv2ForCustomClassification(LayoutLMv2PreTrainedModel):
             input_shape = inputs_embeds.size()[:-1]
 
         seq_length = input_shape[1]
-        # only take the text part of the output representations
+
         sequence_output = outputs[0][:, :seq_length]
         sequence_output = self.dropout(sequence_output)
-
-        # print(sequence_output.size())
 
         logits = self.classifier(sequence_output)
         logits = self.classifier2(logits)
@@ -104,11 +100,11 @@ class LayoutLMv2ForCustomClassification(LayoutLMv2PreTrainedModel):
         blob_logits = None
         start_end_logits = None
 
-        # # Use for SE configuration
+        # # NOTE: Use for SE configuration
         # start_end_logits = self.start_end_classifier(sequence_output)
         # start_end_logits = self.start_end_classifier2(start_end_logits)
 
-        # Use for BLOB configuration
+        # NOTE: Use for BLOB configuration
         blob_logits = self.start_end_classifier(sequence_output)
         blob_logits = self.start_end_classifier2(blob_logits)
 
