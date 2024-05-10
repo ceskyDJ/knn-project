@@ -5,6 +5,7 @@
 1. install `pytorch` according to their instructions: <https://pytorch.org/get-started/locally/>
 2. install `detectronv2`: <https://detectron2.readthedocs.io/en/latest/tutorials/install.html>
     - best to use the most recent version straight from their github
+3. install <https://pypi.org/project/pytesseract/> and <https://tesseract-ocr.github.io/tessdoc/Installation.html>
 3. the rest of the requirements can be installed using `pip install -r requirements.txt`
 
 ## Datasets
