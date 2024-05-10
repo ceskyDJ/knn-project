@@ -1,4 +1,5 @@
 # %%
+from time import time
 from typing import Any, Optional, Tuple, Union
 from PIL import Image, ImageDraw, ImageFont
 from pathlib import Path
@@ -17,7 +18,7 @@ import numpy as np
 from datasets import Dataset
 from sklearn.model_selection import train_test_split
 import matplotlib.pyplot as plt
-
+import utils as knn_utils
 
 
 import torch
@@ -27,31 +28,31 @@ from torch.nn import BCEWithLogitsLoss, CrossEntropyLoss, MSELoss
 import pickle
 
 # %%
-cls2id = {
-  "O": 0,
-  "text": 1,
-  "author_name": 2,
-  "date_published": 3,
-}
-
-id2cls = {
-    0 : "O",
-    1 : "text",
-    2 : "author_name",
-    3 : "date_published",
-}
-
-se_id2cls = {
-    0: "O",
-    1: "B-Start",
-    2: "B-End",
-}
-
-se_cls2id = {
-    "O":       0,
-    "B-Start": 1,
-    "B-End":   2,
-}
+# cls2id = {
+#   "O": 0,
+#   "text": 1,
+#   "author_name": 2,
+#   "date_published": 3,
+# }
+#
+# id2cls = {
+#     0 : "O",
+#     1 : "text",
+#     2 : "author_name",
+#     3 : "date_published",
+# }
+#
+# se_id2cls = {
+#     0: "O",
+#     1: "B-Start",
+#     2: "B-End",
+# }
+#
+# se_cls2id = {
+#     "O":       0,
+#     "B-Start": 1,
+#     "B-End":   2,
+# }
 
 # %%
 def unnormalize_box(bbox, width, height):
@@ -72,30 +73,52 @@ def unnormalize_ls_box(bbox, width, height):
 
 
 # %%
-def load_dataset(filename: str) -> Dataset:
+def load_dataset(filename: str|Path) -> Dataset:
     with open(filename, "rb") as f:
         return pickle.load(f)
 
 # %%
-dataset_name = "llmv2-flat-2023-04-30-[garaz]"
-dataset_path = "../datasets/flat/" + dataset_name + ".pkl"
-dataset_img_path = "../datasets/flat/" + dataset_name
-ds = load_dataset(dataset_path)
+CHECKPOINT_DIR = Path("../checkpoints")
+
+# %%
+timestamp = int(time())
+
+# %%
+check_point_name = "final_se_garaz_lidovky_aha_auto_e15" + "-" + str(timestamp)
+
+# %%
+(CHECKPOINT_DIR / check_point_name).mkdir(exist_ok=True, parents=True)
+
+# %%
+DS_ROOT = Path("/media/filip/warehouse/fit/knn/datasets/")
+# dataset_name = "final-2023-05-09-[gara]-split"
+# dataset_path = DS_ROOT / f"{dataset_name}.pkl"
+# dataset_img_path = "../datasets/flat/" + dataset_name
+# ds = load_dataset(dataset_path)
+train_ds, test_ds = knn_utils.construct_dataset([
+    "final-2023-05-09-[gara]-split", 
+    "final-2023-05-09-[lidovky]-split",
+    "final-2023-05-09-[aha]-split",
+    "final-2023-05-09-[auto]-split",
+    "final-2023-05-09-[e15]-split",
+])
+
+# %%
+with open(CHECKPOINT_DIR / check_point_name / "train_ds.pkl", "wb") as f:
+    pickle.dump(train_ds, f)
+with open(CHECKPOINT_DIR / check_point_name / "test_ds.pkl", "wb") as f:
+    pickle.dump(test_ds, f)
+
 # ds = load_dataset("../datasets/example-seznam/seznam_long_1_cls_info.pkl")
 # ds = load_dataset("../datasets/example-seznam/seznam_long_1.pkl")
 
 # %%
-labels = ds.features["word_labels"].feature.names
-# labels = list(id2cls.values())
+labels = train_ds.features["word_labels"].feature.names
+se_labels = train_ds.features["start_end_labels"].feature.names
 
-# %%
-se_labels = ds.features["start_end_labels"].feature.names
-
-# %%
 id2cls = {k: v for k,v in enumerate(labels)}
 cls2id = {v: k for k,v in enumerate(labels)}
 
-# %%
 se_id2cls = {k: v for k,v in enumerate(se_labels)}
 se_cls2id = {v: k for k,v in enumerate(se_labels)}
 
@@ -121,7 +144,7 @@ features = Features({
 # def preprocess_data(boxes, words, ner_tags, img_path):
 def preprocess_data(examples):
   # print("ex:", (examples["words"]))
-  image = [Image.open(dataset_img_path + "/" + path).convert("RGB") for path in examples["image"]]
+  image = [Image.open(DS_ROOT / path).convert("RGB") for path in examples["image"]]
   # image = Image.open(COCO_PATH / "images" / examples["image"]).convert("RGB")
   # words = words
   # boxes = boxes
@@ -149,28 +172,24 @@ def preprocess_data(examples):
   return encoded_inputs
 
 # %%
-nds = ds.train_test_split(test_size=0.2, shuffle=True)
-
-# %%
-train_dataset = nds["train"].map(preprocess_data, batched=True, features=features, batch_size=5, remove_columns=ds.column_names)
+train_dataset = train_ds.map(preprocess_data, batched=True, features=features, batch_size=5, remove_columns=train_ds.column_names)
 train_dataset.set_format(type="torch")
+
+# train_dataset = nds["train"].map(preprocess_data, batched=True, features=features, batch_size=5, remove_columns=ds.column_names)
+# train_dataset.set_format(type="torch")
 # train_dataset = train_dataset.to_iterable_dataset()
 
 # %%
-test_dataset = nds["test"].map(preprocess_data, batched=True, features=features, batch_size=5, remove_columns=ds.column_names)
+test_dataset = test_ds.map(preprocess_data, batched=True, features=features, batch_size=5, remove_columns=test_ds.column_names)
 test_dataset.set_format(type="torch")
 
 # %%
 train_dataloader = DataLoader(train_dataset, batch_size=1) # type: ignore
-
-# %%
 test_dataloader = DataLoader(test_dataset, batch_size=2) # type: ignore
 
 # %%
 import custom_llmv2_no_se
 
-# %%
-check_point_name = "custom_llmv2_big_garaz_1"
 
 # %%
 import gc
@@ -186,15 +205,17 @@ model.config.label2id = cls2id
 
 
 # %%
-def print_metrics(metrics):
+def format_metrics(metrics):
+    lines = []
     for m_type, res in metrics.items():
         if m_type == "test_loss" or m_type == "test_runtime" or m_type == "test_samples_per_second" or m_type == "test_steps_per_second":
-            print(f"{m_type}: {res}")
+            lines.append(f"{m_type}: {res}")
         else:
-            print(f"{m_type}:")
+            lines.append(f"{m_type}:")
 
             for k, v in res.items():
-                print(f"    {k}: {v}")
+                lines.append(f"    {k}: {v}")
+    return lines
 
 # %%
 metric: Any = load_metric("seqeval")
@@ -270,10 +291,11 @@ class CommentTrainer(Trainer):
       return test_dataloader
 
 # %%
+logging_steps = 10
 args = TrainingArguments(
-    output_dir=check_point_name, # dir to store checkpoints
-    max_steps=1000,
-    logging_steps=10,
+    output_dir=str(CHECKPOINT_DIR / check_point_name), # dir to store checkpoints
+    max_steps=3000,
+    logging_steps=logging_steps,
     warmup_ratio=0.1, # small warmup
     fp16=True, # mixed precision (less memory) -- requires CUDA
     push_to_hub=False, 
@@ -293,7 +315,7 @@ torch.cuda.empty_cache()
 
 
 # %%
-trainer.train()
+trainer.train(resume_from_checkpoint=str(CHECKPOINT_DIR / check_point_name / "checkpoint-1000"))
 
 # %%
 predictions, labels, metrics = trainer.predict(test_dataset=test_dataset)
@@ -304,7 +326,11 @@ predictions, labels, metrics = trainer.predict(test_dataset=test_dataset)
 
 # %%
 # print(metrics)
-print_metrics(metrics)
+m_lines = format_metrics(metrics)
+print("\n".join(m_lines))
+# with open(CHECKPOINT_DIR / check_point_name / "test_metrics.txt", "w") as f:
+#     f.write("\n".join(m_lines))
+
 
 
 # %%
@@ -312,5 +338,14 @@ log_df = pd.DataFrame(trainer.state.log_history)
 log_df
 
 # %%
-plt.plot(log_df.index, log_df["loss"], marker="o", linestyle="-")
+with open(CHECKPOINT_DIR / check_point_name / "log_df.pkl", "wb") as f:
+    pickle.dump(log_df, f)
+
+
+# %%
+plt.plot(log_df.index * logging_steps, log_df["loss"], marker="o", linestyle="-", color="blue")
+plt.xlabel("Steps")
+plt.ylabel("Loss")
+plt.title(check_point_name)
+plt.savefig(CHECKPOINT_DIR / check_point_name / "loss.png")
 plt.show()
