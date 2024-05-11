@@ -106,8 +106,6 @@ def cut_off_excess(image: Path|str|Image, save_path: Path|str|None, bboxes, site
     splt_img = cut_image(image, save_path, cut_args[0], cut_perc)
     return splt_img
 
-# %%
-# cut_off_excess(Path("/media/filip/warehouse/fit/knn/v2/datasets/llmv2-v2-2023-05-08-[aha]") / data["image"][6], "", data["wrappers"][6], "aha")
 
 # %%
 def repair_height(cut_height: float, box: list[float]):
