@@ -479,7 +479,7 @@ def make_layoutv2_dataset(annots):
 
 # %%
 sites_string = "-".join(args.sites)
-DATASET_NAME = f"final-2024-05-18-[{sites_string}]-split"
+DATASET_NAME = f"final-2024-05-18-[{sites_string.lower()}]-v4-split"
 NEW_FLAT_DIRECTORY_PATH = DS_ROOT / DATASET_NAME    
 
 # %%
