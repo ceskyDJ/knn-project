@@ -1,4 +1,5 @@
 # %%
+import argparse
 from collections import defaultdict
 import os
 import math
@@ -18,21 +19,31 @@ from transformers.models.pix2struct.image_processing_pix2struct import ImageDraw
 from preprocess_images import cut_off_excess, split_at_max_size
 
 # %%
-DS_ROOT = Path("/media/filip/warehouse/fit/knn/datasets/")
-RAW_DATA_ROOT = Path("/media/filip/warehouse/fit/knn/merged-data/")
+DS_ROOT = Path("/tmp/xsmahe01/datasets/")
+RAW_DATA_ROOT = Path("/tmp/xsmahe01/merged-data/")
 
-# SITE_ROOT = Path(__file__).parent.parent / "datasets/example-data-garaz-cz/extended_output_data/garaz"
-# SITE_ROOT = Path("..") / "datasets/example-seznam/seznamzpravy"
-GARAZ_ROOT= Path("/media/filip/warehouse/fit/knn/merged-data/extended_output_data/garaz")
-# SZ_ROOT= Path("/media/filip/warehouse/fit/knn/merged-data/extended_output_data/seznamzpravy")
-# NOVINKY_ROOT= Path("/media/filip/warehouse/fit/knn/merged-data/extended_output_data/novinky")
-# SPORT_ROOT= Path("/media/filip/warehouse/fit/knn/merged-data/extended_output_data/sport")
-# ZIVE_ROOT= Path("/media/filip/warehouse/fit/knn/merged-data/extended_output_data/zive")
-AHA_ROOT = Path("/media/filip/warehouse/fit/knn/v3/crawled-data-v3/extended_output_data/aha/")
-AUTO_ROOT = Path("/media/filip/warehouse/fit/knn/v3/crawled-data-v3/extended_output_data/auto/")
-LIDOVKY_ROOT = Path("/media/filip/warehouse/fit/knn/v3/crawled-data-v3/extended_output_data/lidovky/")
-E15_ROOT = Path("/media/filip/warehouse/fit/knn/v3/crawled-data-v3/extended_output_data/e15/")
-# SITE_ROOT = Path("/media/filip/warehouse/fit/knn/merged-data/extended_output_data/idnes/")
+GARAZ_ROOT = Path("/tmp/xsmahe01/crawled-data-v4/extended_output_data/garaz")
+AHA_ROOT = Path("/tmp/xsmahe01/crawled-data-v4/extended_output_data/aha")
+AVMANIA_ROOT = Path("/tmp/xsmahe01/crawled-data-v4/extended_output_data/avmania")
+DOUPE_ROOT = Path("/tmp/xsmahe01/crawled-data-v4/extended_output_data/doupe")
+IDNES_ROOT = Path("/tmp/xsmahe01/crawled-data-v4/extended_output_data/idnes")
+LUPA_ROOT = Path("/tmp/xsmahe01/crawled-data-v4/extended_output_data/lupa")
+PRAVDA_ROOT = Path("/tmp/xsmahe01/crawled-data-v4/extended_output_data/pravda")
+SPORT_ROOT = Path("/tmp/xsmahe01/crawled-data-v4/extended_output_data/sport")
+AKTUALITYSK_ROOT = Path("/tmp/xsmahe01/crawled-data-v4/extended_output_data/aktualitysk")
+BLESK_ROOT = Path("/tmp/xsmahe01/crawled-data-v4/extended_output_data/blesk")
+E15_ROOT = Path("/tmp/xsmahe01/crawled-data-v4/extended_output_data/e15")
+ISPORT_ROOT = Path("/tmp/xsmahe01/crawled-data-v4/extended_output_data/isport")
+MOBILMANIA_ROOT = Path("/tmp/xsmahe01/crawled-data-v4/extended_output_data/mobilmania")
+SEZNAMZPRAVY_ROOT = Path("/tmp/xsmahe01/crawled-data-v4/extended_output_data/seznamzpravy")
+VTM_ROOT = Path("/tmp/xsmahe01/crawled-data-v4/extended_output_data/vtm")
+AUTO_ROOT = Path("/tmp/xsmahe01/crawled-data-v4/extended_output_data/auto")
+CONNECT_ROOT = Path("/tmp/xsmahe01/crawled-data-v4/extended_output_data/connect")
+GARAZ_ROOT = Path("/tmp/xsmahe01/crawled-data-v4/extended_output_data/garaz")
+LIDOVKY_ROOT = Path("/tmp/xsmahe01/crawled-data-v4/extended_output_data/lidovky")
+NOVINKY_ROOT = Path("/tmp/xsmahe01/crawled-data-v4/extended_output_data/novinky")
+SME_ROOT = Path("/tmp/xsmahe01/crawled-data-v4/extended_output_data/sme")
+ZIVE_ROOT = Path("/tmp/xsmahe01/crawled-data-v4/extended_output_data/zive")
 
 # %%
 cls2id = {
@@ -74,18 +85,74 @@ MAX_HEIGHTS = defaultdict(lambda: math.inf, {
 })
 
 # %%
-site_list = [AHA_ROOT]
+def parse_args():
+    parser = argparse.ArgumentParser(description="Process site list from CLI")
+    parser.add_argument('--sites', nargs='+', required=True, help='List of site paths')
+    return parser.parse_args()
+
+def get_root_path(site_name: str) -> Path:
+    site_name = site_name.lower()
+    if site_name == "garaz":
+        return GARAZ_ROOT
+    elif site_name == "aha":
+        return AHA_ROOT
+    elif site_name == "avmania":
+        return AVMANIA_ROOT
+    elif site_name == "doupe":
+        return DOUPE_ROOT
+    elif site_name == "idnes":
+        return IDNES_ROOT
+    elif site_name == "lupa":
+        return LUPA_ROOT
+    elif site_name == "pravda":
+        return PRAVDA_ROOT
+    elif site_name == "sport":
+        return SPORT_ROOT
+    elif site_name == "aktualitysk":
+        return AKTUALITYSK_ROOT
+    elif site_name == "blesk":
+        return BLESK_ROOT
+    elif site_name == "e15":
+        return E15_ROOT
+    elif site_name == "isport":
+        return ISPORT_ROOT
+    elif site_name == "mobilmania":
+        return MOBILMANIA_ROOT
+    elif site_name == "seznamzpravy":
+        return SEZNAMZPRAVY_ROOT
+    elif site_name == "vtm":
+        return VTM_ROOT
+    elif site_name == "auto":
+        return AUTO_ROOT
+    elif site_name == "connect":
+        return CONNECT_ROOT
+    elif site_name == "lidovky":
+        return LIDOVKY_ROOT
+    elif site_name == "novinky":
+        return NOVINKY_ROOT
+    elif site_name == "sme":
+        return SME_ROOT
+    elif site_name == "zive":
+        return ZIVE_ROOT
+    else:
+        raise ValueError(f"Neznámá hodnota site_name: {site_name}")
+
+args = parse_args()
+
+site_list = [get_root_path(site) for site in args.sites]
 
 
 # %%
 def filter_author_in_date(segments: dict[str, list[dict[str, Any]]]) -> bool:
     for _, boxes in segments.items():
-        author_bounding_box = [b for b in boxes if b["class_id"] == "author_name"][0]["box"]
-        date_bounding_box = [b for b in boxes if b["class_id"] == "date_published"][0]["box"]
+        if(len(boxes) > 0):
+            author_bounding_box = [b for b in boxes if b["class_id"] == "author_name"][0]["box"]
+            date_bounding_box = [b for b in boxes if b["class_id"] == "date_published"][0]["box"]
 
-        if author_bounding_box[0] >= date_bounding_box[0] and author_bounding_box[1] >= date_bounding_box[1] and \
-                author_bounding_box[2] <= date_bounding_box[2] and author_bounding_box[3] <= date_bounding_box[3]:
-            return True
+            if author_bounding_box[0] >= date_bounding_box[0] and author_bounding_box[1] >= date_bounding_box[1] and \
+                    author_bounding_box[2] <= date_bounding_box[2] and author_bounding_box[3] <= date_bounding_box[3]:
+                return True
+            
     return False
 
 
@@ -411,7 +478,8 @@ def make_layoutv2_dataset(annots):
 
 
 # %%
-DATASET_NAME = "final-2023-05-09-[e15]-split"
+sites_string = "-".join(args.sites)
+DATASET_NAME = f"final-2024-05-18-[{sites_string}]-split"
 NEW_FLAT_DIRECTORY_PATH = DS_ROOT / DATASET_NAME    
 
 # %%
@@ -435,11 +503,16 @@ print("All box sizes:", len(data["all_boxes"]))
 print("ID sizes:", len(data["id"]))
 print("HTML sizes:", len(data["html"]))
 # print("Hierarchy sizes:", len(data["hierarchy"]))
-print("id:", data["id"][0])
+
+if len(data["id"]) > 0:
+    print("id:", data["id"][0])
+else:
+    print("id: none")
 # print(data)
 
 # %%
-(data["wrappers"][0])
+if len(data["wrappers"]) > 0:
+    (data["wrappers"][0])
 
 # %%
 (data["segment_boxes"])
@@ -458,12 +531,13 @@ with open(DS_ROOT / f"{DATASET_NAME}.pkl", "wb") as f:
 ds
 
 # %%
-item = ds[32]
+if(len(ds) > 32):
+    item = ds[32]
 
-print(item["image"])
-im = img.open(DS_ROOT / item["image"]).convert("RGB")
-draw_cls_boxes(im, item["boxes"], item["word_labels"], item["start_end_labels"])
-im.show()
+    print(item["image"])
+    im = img.open(DS_ROOT / item["image"]).convert("RGB")
+    draw_cls_boxes(im, item["boxes"], item["word_labels"], item["start_end_labels"])
+    im.show()
 # seznamzpravy-5476-6.png # has issues
 
 # problematic:
