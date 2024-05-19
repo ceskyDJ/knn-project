@@ -1,4 +1,4 @@
-.PHONY: install pack
+.PHONY: install pack train clean
 
 # Install Miniforge
 install:
@@ -6,7 +6,15 @@ install:
 	chmod +x ./miniforge-install.sh
 	./miniforge-install.sh -b -u -p "$${PWD}/miniforge3"
 	rm ./miniforge-install.sh
-	./miniforge3/bin/conda env create -f ./conda-env.yml
+	./miniforge3/bin/conda env create -f ./cpu-conda-env.yml
+	./miniforge3/bin/conda env create -f ./gpu-conda-env.yml
 
-pack:
-	tar -czvf knn-packed.tar.gz conda-env.yml Makefile src/process_dataset.py src/preprocess_images.py
+train:
+	mkdir -p ./transformers-cache
+	HF_HOME=./transformers-cache ./miniforge3/bin/conda run -n knn-gpu python ./src/layoutlmv2-finetune-window.py
+
+pack: clean
+	tar -czvf knn-packed.tar.gz cpu-conda-env.yml gpu-conda-env.yml Makefile src/*
+
+clean:
+	rm -rf ./src/__pycache__

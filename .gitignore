@@ -6,3 +6,4 @@ venv/
 # Generated files
 __pycache__/
 miniforge3/
+knn-packed.tar.gz
