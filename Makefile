@@ -1,3 +1,5 @@
+SHELL: /bin/bash
+
 .PHONY: install pack train clean
 
 # Install Miniforge
@@ -11,7 +13,13 @@ install:
 
 train:
 	mkdir -p ./transformers-cache
-	HF_HOME=./transformers-cache ./miniforge3/bin/conda run -n knn-gpu python ./src/layoutlmv2-finetune-window.py
+	@echo -n -`date +%s` > ./time-measurement.txt
+	HF_HOME=./transformers-cache ./miniforge3/bin/conda run -n knn-gpu --no-capture-output python ./src/layoutlmv2-finetune-window.py
+	@echo -n "+" >> ./time-measurement.txt
+	@date +%s >> ./time-measurement.txt
+	@echo -n "Training time: "
+	@date -d@`cat ./time-measurement.txt | bc` -u +%H.%M:%S
+	@rm ./time-measurement.txt
 
 pack: clean
 	tar -czvf knn-packed.tar.gz cpu-conda-env.yml gpu-conda-env.yml Makefile src/*
