@@ -8,4 +8,4 @@ CPU version (suitable for dataset (pre)processing):
 
 GPU version (suitable for model training):
 
-`conda create -n knn-gpu -y python=3.11 pytorch-gpu detectron2 transformers datasets pillow pandas seqeval pyyaml matplotlib jupyter pytesseract`
+`conda create -n knn-gpu -y python=3.11 pytorch-gpu detectron2 transformers datasets pillow pandas seqeval pyyaml matplotlib jupyter pytesseract accelerate`
