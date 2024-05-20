@@ -8,7 +8,7 @@ def load_dataset(filename: str|Path) -> Dataset:
         return pickle.load(f)
 
 
-DS_ROOT = Path("/media/filip/warehouse/fit/knn/datasets/")
+DS_ROOT = Path("../datasets/")
 
 def construct_dataset(names: list[str], ds_root=DS_ROOT) -> tuple[Dataset, Dataset]:
     train_ds = []

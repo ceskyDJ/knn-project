@@ -54,7 +54,7 @@ def load_dataset(filename: str|Path) -> Dataset:
 
 
 # %%
-DS_ROOT = Path("/media/filip/warehouse/fit/knn/datasets/")
+DS_ROOT = Path("../datasets/")
 
 # %%
 def se_to_blob(ds: Dataset, ds_root=DS_ROOT) -> Dataset:

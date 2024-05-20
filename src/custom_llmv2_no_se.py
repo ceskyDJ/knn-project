@@ -14,6 +14,8 @@ from torch import nn
 from torch.nn import CrossEntropyLoss, MSELoss
 
 
+TYPE = "start_end"
+
 
 @dataclass
 class TokenClassifier2Output(ModelOutput):
@@ -96,19 +98,15 @@ class LayoutLMv2ForCustomClassification(LayoutLMv2PreTrainedModel):
         logits = self.classifier(sequence_output)
         logits = self.classifier2(logits)
 
-        
         blob_logits = None
         start_end_logits = None
 
-        # # NOTE: Use for SE configuration
-        # start_end_logits = self.start_end_classifier(sequence_output)
-        # start_end_logits = self.start_end_classifier2(start_end_logits)
-
-        # NOTE: Use for BLOB configuration
-        blob_logits = self.start_end_classifier(sequence_output)
-        blob_logits = self.start_end_classifier2(blob_logits)
-
-
+        if TYPE == "blob":
+            blob_logits = self.start_end_classifier(sequence_output)
+            blob_logits = self.start_end_classifier2(blob_logits)
+        else:
+            start_end_logits = self.start_end_classifier(sequence_output)
+            start_end_logits = self.start_end_classifier2(start_end_logits)
 
         loss = None
         if labels is not None and start_end_labels is not None:

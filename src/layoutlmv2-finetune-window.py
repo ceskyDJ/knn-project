@@ -50,13 +50,17 @@ def load_dataset(filename: str|Path) -> Dataset:
         return pickle.load(f)
 
 # %%
-CHECKPOINT_DIR = Path("/media/filip/warehouse/fit/knn/checkpoints")
+BATCH_SIZE = 20
+TYPE = "start_end"  # Available types: "blob", "start_end"
+
+# %%
+CHECKPOINT_DIR = Path("./checkpoints")
 
 # %%
 timestamp = int(time())
 
 # %%
-check_point_name = "final_se_garaz_lidovky_aha_auto_e15-2-layer-weighted-loss" + "-" + str(timestamp)
+check_point_name = f"final_se_garaz_lidovky_aha_auto_e15-2-layer-weighted-loss-batch-{BATCH_SIZE}-{TYPE}-" + str(timestamp)
 
 # %%
 (CHECKPOINT_DIR / check_point_name).mkdir(exist_ok=True, parents=True)
@@ -64,7 +68,7 @@ check_point_name = "final_se_garaz_lidovky_aha_auto_e15-2-layer-weighted-loss" +
 # %%
 DS_ROOT = Path("../datasets/")
 train_ds, test_ds = knn_utils.construct_dataset([
-    "final-2023-05-09-[gara]-split", 
+    "final-2023-05-09-[gara]-split",
     "final-2023-05-09-[lidovky]-split",
     "final-2023-05-09-[aha]-split",
     "final-2023-05-09-[auto]-split",
@@ -72,8 +76,9 @@ train_ds, test_ds = knn_utils.construct_dataset([
 ])
 
 # %%
-train_ds = se_to_blob(train_ds)
-test_ds = se_to_blob(test_ds)
+if TYPE == "blob":
+    train_ds = se_to_blob(train_ds)
+    test_ds = se_to_blob(test_ds)
 
 # %%
 with open(CHECKPOINT_DIR / check_point_name / "train_ds.pkl", "wb") as f:
@@ -83,53 +88,60 @@ with open(CHECKPOINT_DIR / check_point_name / "test_ds.pkl", "wb") as f:
 
 # %%
 labels = train_ds.features["word_labels"].feature.names
-# se_labels = train_ds.features["start_end_labels"].feature.names # NOTE: uncomment for SE models
-blob_labels = train_ds.features["blob_labels"].feature.names
+
+if TYPE == "blob":
+    blob_labels = train_ds.features["blob_labels"].feature.names
+else:
+    se_labels = train_ds.features["start_end_labels"].feature.names
 
 id2cls = {k: v for k,v in enumerate(labels)}
 cls2id = {v: k for k,v in enumerate(labels)}
 
-# se_id2cls = {k: v for k,v in enumerate(se_labels)} # NOTE: uncomment for SE models
-# se_cls2id = {v: k for k,v in enumerate(se_labels)}
-
-blob_id2cls = {k: v for k,v in enumerate(blob_labels)}
-blob_cls2id = {v: k for k,v in enumerate(blob_labels)}
-
+if TYPE == "blob":
+    blob_id2cls = {k: v for k,v in enumerate(blob_labels)}
+    blob_cls2id = {v: k for k,v in enumerate(blob_labels)}
+else:
+    se_id2cls = {k: v for k,v in enumerate(se_labels)}
+    se_cls2id = {v: k for k,v in enumerate(se_labels)}
 
 # %%
 processor = LayoutLMv2Processor.from_pretrained("microsoft/layoutlmv2-base-uncased", revision="no_ocr")
 assert(isinstance(processor, LayoutLMv2Processor))
 
-features = Features({
+features_dict = {
     'image': Array3D(dtype="int64", shape=(3, 224, 224)),
     'input_ids': Sequence(feature=Value(dtype='int64')),
     'attention_mask': Sequence(Value(dtype='int64')),
     'token_type_ids': Sequence(Value(dtype='int64')),
     'bbox': Array2D(dtype="int64", shape=(512, 4)),
     'labels': Sequence(ClassLabel(names=labels)),
-    # 'start_end_labels': Sequence(ClassLabel(names=se_labels)), # NOTE: uncomment for SE models
-    'blob_labels': Sequence(ClassLabel(names=blob_labels)),
-})
+}
+
+if TYPE == "blob":
+    features_dict['blob_labels'] = Sequence(ClassLabel(names=blob_labels))
+else:
+    features_dict['start_end_labels'] = Sequence(ClassLabel(names=se_labels))
+
+features = Features(features_dict)
 
 def preprocess_data(examples):
-  image = [Image.open(DS_ROOT / path).convert("RGB") for path in examples["image"]]
-  encoded_inputs = processor(image, examples["words"], boxes=examples["boxes"], word_labels=examples["word_labels"], stride=128,
-                             padding="max_length", truncation=True, max_length=512, return_overflowing_tokens=True, return_offsets_mapping=True)
+    image = [Image.open(DS_ROOT / path).convert("RGB") for path in examples["image"]]
+    encoded_inputs = processor(image, examples["words"], boxes=examples["boxes"], word_labels=examples["word_labels"], stride=128,
+                               padding="max_length", truncation=True, max_length=512, return_overflowing_tokens=True, return_offsets_mapping=True)
 
-  offset_mapping = encoded_inputs.pop('offset_mapping')
-  overflow_to_sample_mapping = encoded_inputs.pop('overflow_to_sample_mapping')
+    offset_mapping = encoded_inputs.pop('offset_mapping')
+    overflow_to_sample_mapping = encoded_inputs.pop('overflow_to_sample_mapping')
 
+    if TYPE == "blob":
+        encoded_inputs_blob = processor(image, examples["words"], boxes=examples["boxes"], word_labels=examples["blob_labels"], stride=128,
+                                        padding="max_length", truncation=True, max_length=512, return_overflowing_tokens=True, return_offsets_mapping=True)
+        encoded_inputs["blob_labels"] = encoded_inputs_blob["labels"]
+    else:
+        encoded_inputs_start_end = processor(image, examples["words"], boxes=examples["boxes"], word_labels=examples["start_end_labels"], stride=128,
+                                             padding="max_length", truncation=True, max_length=512, return_overflowing_tokens=True, return_offsets_mapping=True)
+        encoded_inputs["start_end_labels"] = encoded_inputs_start_end["labels"]
 
-  # NOTE: uncomment for SE models
-  # encoded_inputs_start_end = processor(image, examples["words"], boxes=examples["boxes"], word_labels=examples["start_end_labels"], stride=128,
-  #                            padding="max_length", truncation=True, max_length=512, return_overflowing_tokens=True, return_offsets_mapping=True)
-  # encoded_inputs["start_end_labels"] = encoded_inputs_start_end["labels"]
-
-  encoded_inputs_start_end = processor(image, examples["words"], boxes=examples["boxes"], word_labels=examples["blob_labels"], stride=128,
-                             padding="max_length", truncation=True, max_length=512, return_overflowing_tokens=True, return_offsets_mapping=True)
-  encoded_inputs["blob_labels"] = encoded_inputs_start_end["labels"]
-  
-  return encoded_inputs
+    return encoded_inputs
 
 # %%
 train_dataset = train_ds.map(preprocess_data, batched=True, features=features, batch_size=5, remove_columns=train_ds.column_names)
@@ -138,8 +150,8 @@ train_dataset.set_format(type="torch")
 test_dataset = test_ds.map(preprocess_data, batched=True, features=features, batch_size=5, remove_columns=test_ds.column_names)
 test_dataset.set_format(type="torch")
 
-train_dataloader = DataLoader(train_dataset, batch_size=1) # type: ignore
-test_dataloader = DataLoader(test_dataset, batch_size=2) # type: ignore
+train_dataloader = DataLoader(train_dataset, batch_size=BATCH_SIZE) # type: ignore
+test_dataloader = DataLoader(test_dataset, batch_size=BATCH_SIZE) # type: ignore
 
 # %%
 import custom_llmv2_no_se
@@ -192,29 +204,30 @@ def compute_metrics(p):
         for prediction, label in zip(predictions_words, word_labels)
     ]
 
-    # NOTE: uncomment for SE models
-    # true_predictions_se = [
-    #     [se_id2cls[p] for (p, l) in zip(prediction, label) if l != -100]
-    #     for prediction, label in zip(predictions_se, se_labels)
-    # ]
-    # true_labels_se = [
-    #     [se_id2cls[l] for (p, l) in zip(prediction, label) if l != -100]
-    #     for prediction, label in zip(predictions_se, se_labels)
-    # ]
-
-
-    true_predictions_blob = [
-        [blob_id2cls[p] for (p, l) in zip(prediction, label) if l != -100]
-        for prediction, label in zip(predictions_se, se_labels)
-    ]
-    true_labels_blob = [
-        [blob_id2cls[l] for (p, l) in zip(prediction, label) if l != -100]
-        for prediction, label in zip(predictions_se, se_labels)
-    ]
+    if TYPE == "blob":
+        true_predictions_blob = [
+            [blob_id2cls[p] for (p, l) in zip(prediction, label) if l != -100]
+            for prediction, label in zip(predictions_se, se_labels)
+        ]
+        true_labels_blob = [
+            [blob_id2cls[l] for (p, l) in zip(prediction, label) if l != -100]
+            for prediction, label in zip(predictions_se, se_labels)
+        ]
+    else:
+        true_predictions_se = [
+            [se_id2cls[p] for (p, l) in zip(prediction, label) if l != -100]
+            for prediction, label in zip(predictions_se, se_labels)
+        ]
+        true_labels_se = [
+            [se_id2cls[l] for (p, l) in zip(prediction, label) if l != -100]
+            for prediction, label in zip(predictions_se, se_labels)
+        ]
 
     results = metric.compute(predictions=true_predictions, references=true_labels)
-    # results_se = metric.compute(predictions=true_predictions_se, references=true_labels_se) # NOTE: uncomment for SE models
-    results_blob = metric.compute(predictions=true_predictions_blob, references=true_labels_blob)
+    if TYPE == "blob":
+        results_blob = metric.compute(predictions=true_predictions_blob, references=true_labels_blob)
+    else:
+        results_se = metric.compute(predictions=true_predictions_se, references=true_labels_se)
     if return_entity_level_metrics:
         final_results = {}
         final_word_results = {}
@@ -233,8 +246,10 @@ def compute_metrics(p):
             else:
                 final_se_results[key] = value
         final_results["words"] = final_word_results
-        # final_results["start_end"] = final_se_results # NOTE: uncomment for SE models
-        final_results["blob"] = final_se_results
+        if TYPE == "blob":
+            final_results["blob"] = final_se_results
+        else:
+            final_results["start_end"] = final_se_results
         return final_results
     else:
         return {

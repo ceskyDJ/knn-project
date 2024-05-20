@@ -11,7 +11,7 @@ import utils as knn_utils
 
 
 # %%
-DS_ROOT = Path("/media/filip/warehouse/fit/knn/datasets/")
+DS_ROOT = Path("../datasets/")
 dataset_name = "final-2023-05-09-[gara]-split"
 
 dataset_path = DS_ROOT / f"{dataset_name}.pkl"
@@ -80,7 +80,7 @@ def unnormalize_box(bbox, width, height):
      ]
 
 # %%
-CHECKPOINT_DIR = Path("/media/filip/warehouse/fit/knn/checkpoints/final_se_garaz_lidovky_aha_auto_e15-2-layer-1715368093")
+CHECKPOINT_DIR = Path("./checkpoints/final_se_garaz_lidovky_aha_auto_e15-2-layer-1715368093")
 # CHECKPOINT_DIR = Path("../checkpoints")
 model_path = CHECKPOINT_DIR  / "checkpoint-1000"
 # model_path = "./layoutlmv2-finetuned-window/checkpoint-1000"
